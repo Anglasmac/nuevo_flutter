@@ -1,0 +1,67 @@
+name: nuevo_proyecto_flutter # Asegúrate que este sea el nombre correcto de tu paquete
+description: "A new Flutter project."
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  # Ajusta esto a la versión de SDK con la que estás trabajando si es necesario
+  # Versiones más recientes de Flutter pueden requerir >3.0.0
+  sdk: '>=3.0.0 <4.0.0' # Rango recomendado para Flutter 3+
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Iconos estándar de iOS
+  cupertino_icons: ^1.0.8 # Ya lo tenías
+
+  # === DEPENDENCIAS AÑADIDAS ===
+
+  # Para el indicador de página en OrderProductionPage
+  smooth_page_indicator: ^1.1.0 # O la última versión de pub.dev
+
+  # Para el calendario en ReservasWidget/ReservasCalendarScreen
+  table_calendar: ^3.1.2 # O la última versión de pub.dev
+
+  # Para formatear fechas y horas (usado en Reservas, potencialmente en otros)
+  intl: ^0.19.0 # O la última versión de pub.dev
+
+  # Para los gráficos en InsumoWidget/InsumoDetailScreen
+  fl_chart: ^0.68.0 # O la última versión de pub.dev
+
+  # === FIN DEPENDENCIAS AÑADIDAS ===
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Lints para buenas prácticas de código
+  flutter_lints: ^4.0.0 # Ya lo tenías (puedes actualizar si quieres, ej: ^5.0.0)
+
+
+flutter:
+  uses-material-design: true
+
+  # === SECCIÓN DE ASSETS ===
+  # Descomenta y define la carpeta donde están tus imágenes
+  assets:
+    # Asegúrate que la ruta sea correcta desde la raíz de tu proyecto
+    - lib/assets/images/
+
+  # === FIN SECCIÓN DE ASSETS ===
+
+
+  # Sección de fuentes (si usas fuentes personalizadas)
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
