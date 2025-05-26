@@ -131,7 +131,7 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
           content: Text('¿Estás seguro de que quieres eliminar esta reservación?'),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancelar'),
+              child: Text('Cancel'),
               onPressed: () => Navigator.of(context).pop(false),
             ),
             TextButton(
