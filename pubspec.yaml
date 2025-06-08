@@ -33,6 +33,8 @@ dependencies:
   dio: ^5.4.0 # O la última versión estable
   shared_preferences: ^2.2.2 # O la última versión estable
 
+  
+  http: ^1.2.2
   # === FIN DEPENDENCIAS AÑADIDAS ===
 
 

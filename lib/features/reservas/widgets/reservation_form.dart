@@ -1,14 +1,23 @@
-import 'package:flutter/foundation.dart';
+// lib/features/reservas/widgets/reservation_form.dart
+import 'package:flutter/foundation.dart'; // Para kDebugMode
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; // Para formatear y parsear fechas/horas
 
-// Antes era ReservationForm (ya estaba bien nombrado)
+// Importa tu modelo Reserva
+// ¡ASEGÚRATE DE QUE ESTA RUTA Y EL NOMBRE DEL PAQUETE SEAN CORRECTOS!
+import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
+
 class ReservationForm extends StatefulWidget {
   final DateTime? initialDate; // Fecha inicial opcional (viene del calendario)
-  // Podrías pasar una Reserva existente si es un formulario de edición
-  // final Reserva? existingReserva;
+  final Reserva? existingReserva; // Para modo edición
+  final Function(Reserva reservaData) onSave; // Callback para pasar los datos a guardar
 
-  const ReservationForm({this.initialDate, super.key});
+  const ReservationForm({
+    this.initialDate,
+    this.existingReserva,
+    required this.onSave, // Hacer el callback requerido
+    super.key,
+  });
 
   @override
   State<ReservationForm> createState() => _ReservationFormState();
@@ -21,7 +30,7 @@ class _ReservationFormState extends State<ReservationForm> {
   late TextEditingController _eventNameController;
   late TextEditingController _eventDateController;
   late TextEditingController _eventTimeController;
-  late TextEditingController _eventLocationController; // Nuevo campo: Ubicación
+  late TextEditingController _eventLocationController;
   late TextEditingController _observationsController;
 
   // Variables para guardar la fecha y hora seleccionadas
@@ -32,37 +41,34 @@ class _ReservationFormState extends State<ReservationForm> {
   void initState() {
     super.initState();
 
-    // Inicializar fecha y hora seleccionadas
-    _selectedDate =
-        widget.initialDate ?? DateTime.now(); // Usa la fecha pasada o la actual
-    _selectedTime = TimeOfDay.now(); // Hora actual por defecto
-
     // Inicializar controladores
     _eventNameController = TextEditingController();
     _eventLocationController = TextEditingController();
     _observationsController = TextEditingController();
 
-    // Formatear fecha y hora iniciales para los controladores de texto
     final dateFormatter = DateFormat.yMd(); // Formato corto de fecha
     final timeFormatter = DateFormat.jm(); // Formato de hora AM/PM
-    _eventDateController =
-        TextEditingController(text: dateFormatter.format(_selectedDate!));
-    _eventTimeController = TextEditingController(
-        text: timeFormatter.format(DateTime.now().copyWith(
-            hour: _selectedTime!.hour,
-            minute: _selectedTime!.minute))); // Formatea la hora actual
 
-    // nSi es un formulario de edición, inicializar con datos de existingReserva
-    // if (widget.existingReserva != null) {
-    //   final reserva = widget.existingReserva!;
-    //   _eventNameController.text = reserva.eventName;
-    //   _selectedDate = reserva.eventDateTime;
-    //   _selectedTime = TimeOfDay.fromDateTime(reserva.eventDateTime);
-    //   _eventDateController.text = dateFormatter.format(_selectedDate!);
-    //   _eventTimeController.text = timeFormatter.format(reserva.eventDateTime);
-    //   _eventLocationController.text = reserva.location;
-    //   _observationsController.text = reserva.notes;
-    // }
+    if (widget.existingReserva != null) {
+      // --- MODO EDICIÓN ---
+      final reserva = widget.existingReserva!;
+      _eventNameController.text = reserva.eventName;
+      _selectedDate = reserva.eventDateTime;
+      _selectedTime = TimeOfDay.fromDateTime(reserva.eventDateTime);
+      _eventDateController = TextEditingController(text: dateFormatter.format(_selectedDate!));
+      _eventTimeController = TextEditingController(text: timeFormatter.format(reserva.eventDateTime));
+      _eventLocationController.text = reserva.location ?? ''; // Usar '' si es null para el controller
+      _observationsController.text = reserva.notes ?? '';   // Usar '' si es null para el controller
+    } else {
+      // --- MODO CREACIÓN ---
+      _selectedDate = widget.initialDate ?? DateTime.now();
+      _selectedTime = TimeOfDay.now(); // Hora actual por defecto
+      _eventDateController = TextEditingController(text: dateFormatter.format(_selectedDate!));
+      // Formatea la hora actual para el controlador de texto
+      final initialDateTimeForTimeCtrl = DateTime.now().copyWith(
+          hour: _selectedTime!.hour, minute: _selectedTime!.minute);
+      _eventTimeController = TextEditingController(text: timeFormatter.format(initialDateTimeForTimeCtrl));
+    }
   }
 
   @override
@@ -87,8 +93,7 @@ class _ReservationFormState extends State<ReservationForm> {
     if (picked != null && picked != _selectedDate) {
       setState(() {
         _selectedDate = picked;
-        _eventDateController.text = DateFormat.yMd()
-            .format(_selectedDate!); // Actualiza el campo de texto
+        _eventDateController.text = DateFormat.yMd().format(_selectedDate!); // Actualiza el campo de texto
       });
     }
   }
@@ -102,9 +107,8 @@ class _ReservationFormState extends State<ReservationForm> {
       setState(() {
         _selectedTime = picked;
         // Formatea la hora seleccionada para el campo de texto
-        final now = DateTime.now();
-        final dt = DateTime(now.year, now.month, now.day, _selectedTime!.hour,
-            _selectedTime!.minute);
+        final now = DateTime.now(); // Se usa solo para obtener el año/mes/día actual para formatear
+        final dt = DateTime(now.year, now.month, now.day, _selectedTime!.hour, _selectedTime!.minute);
         _eventTimeController.text = DateFormat.jm().format(dt);
       });
     }
@@ -128,7 +132,7 @@ class _ReservationFormState extends State<ReservationForm> {
     FocusScope.of(context).unfocus(); // Oculta el teclado
   }
 
-  void _saveForm() {
+  void _submitFormForSave() { // Renombrado para claridad, este es el que llama el botón
     // 1. Validar el formulario
     if (_formKey.currentState?.validate() ?? false) {
       // 2. Asegurarse de que se ha seleccionado fecha y hora
@@ -150,43 +154,37 @@ class _ReservationFormState extends State<ReservationForm> {
         _selectedTime!.minute,
       );
 
-      // 4. Crear el objeto Reserva (o actualizar si es edición)
-      // final nuevaReserva = Reserva(
-      //    id: widget.existingReserva?.id ?? DateTime.now().millisecondsSinceEpoch.toString(), // Reusa ID o crea nuevo
-      //    eventName: _eventNameController.text.trim(),
-      //    eventDateTime: eventDateTime,
-      //    location: _eventLocationController.text.trim(),
-      //    notes: _observationsController.text.trim(),
-      //    color: widget.existingReserva?.color ?? Colors.blue // Reusa color o usa default
-      // );
-
-      // 5. nEnviar la reserva a la API o base de datos
-      if (kDebugMode) {
-        print('Guardando reserva:');
-      }
-      if (kDebugMode) {
-        print('  Nombre: ${_eventNameController.text.trim()}');
-      }
-      if (kDebugMode) {
-        print('  Fecha y Hora: $eventDateTime');
-      }
-      if (kDebugMode) {
-        print('  Ubicación: ${_eventLocationController.text.trim()}');
-      }
-      if (kDebugMode) {
-        print('  Notas: ${_observationsController.text.trim()}');
-      }
-
-      // 6. Mostrar mensaje de éxito y cerrar (opcionalmente devolver true)
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Reserva guardada con éxito'),
-            backgroundColor: Colors.green),
+      // 4. Crear el objeto Reserva
+      final Reserva reservaParaGuardar = Reserva(
+         id: widget.existingReserva?.id, // Pasa el ID si es para editar, sino será null
+         eventName: _eventNameController.text.trim(),
+         eventDateTime: eventDateTime,
+         location: _eventLocationController.text.trim().isNotEmpty 
+                    ? _eventLocationController.text.trim() 
+                    : null, // Guarda null si está vacío
+         notes: _observationsController.text.trim().isNotEmpty 
+                  ? _observationsController.text.trim() 
+                  : null, // Guarda null si está vacío
+         color: widget.existingReserva?.color ?? Colors.blue, // Reusa color o usa default
       );
-      // Cerrar la pantalla del formulario devolviendo 'true' para indicar que se guardó algo
-      if (Navigator.canPop(context)) {
-        Navigator.pop(context, true);
+
+      // 5. Imprimir en debug (como en tu original)
+      if (kDebugMode) {
+        print('Datos del formulario listos para guardar:');
+        print('  ID: ${reservaParaGuardar.id}');
+        print('  Nombre: ${reservaParaGuardar.eventName}');
+        print('  Fecha y Hora: ${reservaParaGuardar.eventDateTime}');
+        print('  Ubicación: ${reservaParaGuardar.location}');
+        print('  Notas: ${reservaParaGuardar.notes}');
+        print('  Color: ${reservaParaGuardar.color}');
       }
+
+      // 6. LLAMAR AL CALLBACK onSave para que el widget padre (CreateReservationScreen) maneje la API
+      widget.onSave(reservaParaGuardar);
+
+      // Los mensajes de éxito/error y el Navigator.pop() ahora se manejarán en CreateReservationScreen
+      // después de que la llamada a la API se complete.
+
     } else {
       // Mensaje si la validación falla
       ScaffoldMessenger.of(context).showSnackBar(
@@ -199,60 +197,52 @@ class _ReservationFormState extends State<ReservationForm> {
 
   @override
   Widget build(BuildContext context) {
-    Theme.of(context);
+    final theme = Theme.of(context); // Obtener el tema para usar sus colores/estilos si es necesario
 
     return Form(
-      // Envuelve todo en un widget Form
-      key: _formKey, // Asigna la clave global
+      key: _formKey,
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.stretch, // Estira los botones al final
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // --- Campo Nombre del Evento ---
           TextFormField(
             controller: _eventNameController,
             decoration: const InputDecoration(
-              labelText: 'Nombre del evento *', // Indica campo obligatorio
+              labelText: 'Nombre del evento *',
               prefixIcon: Icon(Icons.event_note_outlined),
             ),
-            textCapitalization:
-                TextCapitalization.sentences, // Primera letra mayúscula
+            textCapitalization: TextCapitalization.sentences,
             validator: (value) {
-              // Regla de validación
               if (value == null || value.trim().isEmpty) {
                 return 'El nombre del evento es obligatorio';
               }
-              if (value.length < 3) {
+              if (value.trim().length < 3) {
                 return 'El nombre debe tener al menos 3 caracteres';
               }
-              return null; // Válido
+              return null;
             },
           ),
           const SizedBox(height: 16),
 
           // --- Campos Fecha y Hora (lado a lado) ---
           Row(
-            crossAxisAlignment: CrossAxisAlignment
-                .start, // Alinea arriba por si hay errores de validación
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Campo Fecha (solo lectura, se actualiza con DatePicker)
               Expanded(
                 child: TextFormField(
                   controller: _eventDateController,
-                  readOnly: true, // No se puede escribir directamente
+                  readOnly: true,
                   decoration: InputDecoration(
                       labelText: 'Fecha *',
                       prefixIcon: const Icon(Icons.calendar_today_outlined),
                       suffixIcon: IconButton(
-                        // Icono para abrir DatePicker
                         icon: const Icon(Icons.edit_calendar_outlined),
                         tooltip: 'Seleccionar Fecha',
                         onPressed: () => _selectDate(context),
                       )),
-                  onTap: () =>
-                      _selectDate(context), // Abrir también al tocar el campo
+                  onTap: () => _selectDate(context),
                   validator: (value) {
-                    if (_selectedDate == null) {
+                    if (_selectedDate == null) { // O podrías validar el texto del controller si prefieres
                       return 'Seleccione una fecha';
                     }
                     return null;
@@ -260,7 +250,6 @@ class _ReservationFormState extends State<ReservationForm> {
                 ),
               ),
               const SizedBox(width: 12),
-              // Campo Hora (solo lectura, se actualiza con TimePicker)
               Expanded(
                 child: TextFormField(
                   controller: _eventTimeController,
@@ -269,14 +258,13 @@ class _ReservationFormState extends State<ReservationForm> {
                       labelText: 'Hora *',
                       prefixIcon: const Icon(Icons.access_time_outlined),
                       suffixIcon: IconButton(
-                        // Icono para abrir TimePicker
                         icon: const Icon(Icons.edit_outlined),
                         tooltip: 'Seleccionar Hora',
                         onPressed: () => _selectTime(context),
                       )),
                   onTap: () => _selectTime(context),
                   validator: (value) {
-                    if (_selectedTime == null) {
+                    if (_selectedTime == null) { // O podrías validar el texto del controller
                       return 'Seleccione una hora';
                     }
                     return null;
@@ -304,32 +292,28 @@ class _ReservationFormState extends State<ReservationForm> {
             decoration: const InputDecoration(
               labelText: 'Observaciones (Opcional)',
               prefixIcon: Icon(Icons.notes_outlined),
-              alignLabelWithHint:
-                  true, // Alinea el label arriba para multilínea
+              alignLabelWithHint: true,
             ),
-            maxLines: 3, // Permite hasta 3 líneas visibles
+            maxLines: 3,
             textCapitalization: TextCapitalization.sentences,
           ),
-          const SizedBox(height: 24), // Espacio antes de los botones
+          const SizedBox(height: 24),
 
           // --- Botones de Acción (Guardar y Limpiar) ---
           Row(
-            mainAxisAlignment:
-                MainAxisAlignment.end, // Alinea botones a la derecha
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // Botón Limpiar
               TextButton(
                 onPressed: _clearForm,
-                style: TextButton.styleFrom(foregroundColor: Colors.grey[600]),
+                style: TextButton.styleFrom(foregroundColor: theme.textTheme.bodyLarge?.color?.withOpacity(0.7) ?? Colors.grey[600]),
                 child: const Text('Limpiar'),
               ),
               const SizedBox(width: 12),
-              // Botón Guardar
               ElevatedButton.icon(
                 icon: const Icon(Icons.save_outlined),
-                label: const Text('Guardar Reserva'),
-                onPressed: _saveForm, // Llama a la función de guardado
-                // style: ElevatedButton.styleFrom(backgroundColor: Colors.green), // Color específico si quieres
+                label: Text(widget.existingReserva == null ? 'Guardar Reserva' : 'Actualizar Reserva'),
+                onPressed: _submitFormForSave, // Llama a la función de guardado/submit
+                // style: ElevatedButton.styleFrom(backgroundColor: Colors.green), // O usa el color primario del tema
               ),
             ],
           ),

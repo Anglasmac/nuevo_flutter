@@ -90,11 +90,12 @@ class ReservationCard extends StatelessWidget {
                                const SizedBox(width: 4.0),
                                Expanded(
                                  child: Text(
-                                     reserva.location,
+                                     reserva.location ?? 'No especificada',
                                      style: textTheme.bodySmall?.copyWith(color: Colors.grey[700]),
                                      overflow: TextOverflow.ellipsis,
                                  ),
                                ),
+                               
                             ],
                          ),
                       ]
