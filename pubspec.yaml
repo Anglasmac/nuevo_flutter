@@ -30,6 +30,9 @@ dependencies:
   # Para los gráficos en InsumoWidget/InsumoDetailScreen
   fl_chart: ^0.68.0 # O la última versión de pub.dev
 
+  dio: ^5.4.0 # O la última versión estable
+  shared_preferences: ^2.2.2 # O la última versión estable
+
   # === FIN DEPENDENCIAS AÑADIDAS ===
 
 
