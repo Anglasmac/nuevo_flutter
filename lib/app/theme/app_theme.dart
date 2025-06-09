@@ -2,20 +2,22 @@
 import 'package:flutter/material.dart';
 
 class AppTheme {
-  // Definimos los colores principales de tu marca basados en el CSS
-  static const Color _beigeBackground = Color(0xFFd0b88e);
+  // Definimos los colores principales de tu marca
+  // El color beige ya no se usará como fondo principal, pero lo dejamos por si lo necesitas.
+  static const Color _beigeBackground = Color(0xFFd0b88e); 
   static const Color _darkBrownText = Color(0xFF5C4033);
-  static const Color _burgundyAccent = Color(0xFF9e3535); // Usado para hover/selected, primario
-  static const Color _loginButtonRed = Color(0xFF8C1616); // Similar al burgundy, para botones
+  static const Color _burgundyAccent = Color(0xFF9e3535); 
+  static const Color _loginButtonRed = Color(0xFF8C1616);
   static const Color _white = Colors.white;
-  static const Color _black = Colors.black; // Para bordes de input, etc.
-  static const Color _errorRed = Color(0xFFdc3545); // Para errores
+  static const Color _black = Colors.black;
+  static const Color _errorRed = Color(0xFFdc3545);
 
-  static ThemeData get lightTheme { // CAMBIO: Ahora es un getter
+  static ThemeData get lightTheme {
     return ThemeData(
       brightness: Brightness.light,
       primaryColor: _burgundyAccent,
-      scaffoldBackgroundColor: _beigeBackground,
+      // <-- CAMBIO 1: El fondo principal ahora es blanco.
+      scaffoldBackgroundColor: _white, 
       hintColor: _darkBrownText.withOpacity(0.6),
 
       colorScheme: const ColorScheme(
@@ -26,7 +28,7 @@ class AppTheme {
         onSecondary: _white,
         error: _errorRed,
         onError: _white,
-        surface: _white,
+        surface: _white, // Las tarjetas y superficies seguirán siendo blancas, pero se diferenciarán por la sombra (elevation)
         onSurface: _darkBrownText,
       ),
 
@@ -142,8 +144,9 @@ class AppTheme {
         ),
       ),
 
+      // <-- CAMBIO 2: El menú lateral (drawer) también será blanco para mantener la consistencia.
       drawerTheme: const DrawerThemeData(
-        backgroundColor: _beigeBackground,
+        backgroundColor: _white,
       ),
 
       listTileTheme: const ListTileThemeData(
@@ -153,7 +156,8 @@ class AppTheme {
 
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.all(_burgundyAccent.withOpacity(0.7)),
-        trackColor: WidgetStateProperty.all(_beigeBackground.withOpacity(0.3)),
+        // <-- CAMBIO 3: La pista del scrollbar ahora es gris claro para que se vea sobre el fondo blanco.
+        trackColor: WidgetStateProperty.all(Colors.grey[200]),
         radius: const Radius.circular(10),
         thickness: WidgetStateProperty.all(6),
         thumbVisibility: WidgetStateProperty.all(false),
@@ -161,9 +165,7 @@ class AppTheme {
     );
   }
 
-  static ThemeData get darkTheme { // CAMBIO: Ahora es un getter
-    // Como solicitaste no tener tema oscuro, devolvemos el tema claro.
-    // Si el sistema está en modo oscuro, se usará este tema (que es el claro).
+  static ThemeData get darkTheme {
     debugPrint("ADVERTENCIA: Se solicitó el tema oscuro, pero se utiliza el tema claro como fallback.");
     return lightTheme;
   }

@@ -1,44 +1,54 @@
 // lib/services/api_service.dart
+
+// <-- 1. AÑADIDO: Import para detectar la plataforma web.
+import 'package:flutter/foundation.dart' show kIsWeb; 
+
 import 'dart:convert';
-import 'dart:io'; // Para Platform.isAndroid / Platform.isIOS
+import 'dart:io'; // Se mantiene, pero se usará de forma segura.
 import 'package:http/http.dart' as http;
-// ¡IMPORTANTE! Ajusta la ruta y el nombre del paquete
 import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
 
 class ApiService {
-  String? _authToken; // 1. Variable para guardar el token
+  String? _authToken;
 
-  // 2. Método para establecer el token después del login
   void setAuthToken(String token) {
     _authToken = token;
   }
 
-   String get _baseUrl {
-    // --- ¡¡¡CONFIGURACIÓN CRÍTICA DE LA URL BASE!!! ---
-    const String backendHost = "localhost"; // Para web/iOS sim. Cambiar por IP para dispositivo físico.
-    const String backendPort = "3000";    // Puerto de tu backend Node.js
-    const String apiPrefix = "/api";      // Prefijo de tu API si lo usas (ej. /api)
+  // <-- 2. CORREGIDO: Toda la lógica de la URL base ha sido reemplazada.
+  String get _baseUrl {
+    const String backendHost = "localhost";
+    const String backendPort = "3000";
+    const String apiPrefix = ""; // <-- CAMBIA ESTO
 
-    if (Platform.isAndroid) {
-      // Para emulador Android, 10.0.2.2 es el localhost de tu PC
-      return 'http://10.0.2.2:$backendPort$apiPrefix';
-    } else { // Para iOS simulador, web, o dispositivo físico (si configuras IP)
-      // ¡PARA DISPOSITIVO FÍSICO, REEMPLAZA backendHost CON LA IP DE TU PC EN LA RED LOCAL!
-      // Ejemplo: return 'http://192.168.1.100:$backendPort$apiPrefix';
+    // Primero, verificamos si estamos en un entorno web.
+    if (kIsWeb) {
+      // Si es web, siempre usamos localhost. El navegador se encarga del resto.
       return 'http://$backendHost:$backendPort$apiPrefix';
+    } else {
+      // Si NO es web, estamos en una plataforma nativa (móvil/escritorio).
+      // Aquí sí es SEGURO usar Platform.
+      if (Platform.isAndroid) {
+        // Para el emulador de Android, usa la IP especial 10.0.2.2.
+        return 'http://10.0.2.2:$backendPort$apiPrefix';
+      } else {
+        // Para el simulador de iOS o escritorio, localhost funciona.
+        // NOTA: Para un dispositivo físico real (iPhone/Android),
+        // DEBES reemplazar 'localhost' con la IP de tu PC en la red WiFi.
+        // Ejemplo: 'http://192.168.1.105:$backendPort$apiPrefix'
+        return 'http://$backendHost:$backendPort$apiPrefix';
+      }
     }
   }
 
-  // 3. Headers comunes, usando el token almacenado si existe
   Map<String, String> get _commonHeaders => {
         'Content-Type': 'application/json; charset=UTF-8',
         if (_authToken != null) 'Authorization': 'Bearer $_authToken',
       };
 
   // --- MÉTODOS ESPECÍFICOS PARA EL ENDPOINT DE RESERVAS ---
-  // AJUSTA "/reservations" SI TU ENDPOINT ES DIFERENTE
+  // (El resto del archivo no necesita cambios)
 
-  // GET /api/reservations - Obtener todas las reservas
   Future<List<Reserva>> fetchReservations() async {
     final Uri url = Uri.parse('$_baseUrl/reservations');
     print('ApiService: GET $url');
@@ -62,7 +72,6 @@ class ApiService {
     }
   }
 
-  // POST /api/reservations - Crear una nueva reserva
   Future<Reserva> createReservation(Reserva reservationData) async {
     final Uri url = Uri.parse('$_baseUrl/reservations');
     final String requestBody = jsonEncode(reservationData.toJson());
@@ -75,7 +84,7 @@ class ApiService {
         body: requestBody,
       );
 
-      if (response.statusCode == 201 || response.statusCode == 200) { // 201 es 'Created'
+      if (response.statusCode == 201 || response.statusCode == 200) {
         print('ApiService: Reservation created successfully. Response: ${response.body}');
         return Reserva.fromJson(json.decode(response.body) as Map<String, dynamic>);
       } else {
@@ -88,7 +97,6 @@ class ApiService {
     }
   }
 
-  // GET /api/reservations/:id - Obtener una reserva específica por ID
   Future<Reserva> fetchReservationById(String reservationId) async {
     final Uri url = Uri.parse('$_baseUrl/reservations/$reservationId');
     print('ApiService: GET $url');
@@ -109,7 +117,6 @@ class ApiService {
     }
   }
 
-  // PUT /api/reservations/:id - Actualizar una reserva existente
   Future<Reserva> updateReservation(String reservationId, Reserva reservationData) async {
     final Uri url = Uri.parse('$_baseUrl/reservations/$reservationId');
     final String requestBody = jsonEncode(reservationData.toJson());
@@ -135,7 +142,6 @@ class ApiService {
     }
   }
 
-  // DELETE /api/reservations/:id - Eliminar una reserva
   Future<void> deleteReservation(String reservationId) async {
     final Uri url = Uri.parse('$_baseUrl/reservations/$reservationId');
     print('ApiService: DELETE $url');
@@ -143,7 +149,7 @@ class ApiService {
     try {
       final response = await http.delete(url, headers: _commonHeaders);
 
-      if (response.statusCode == 200 || response.statusCode == 204) { // 204 es 'No Content'
+      if (response.statusCode == 200 || response.statusCode == 204) {
         print('ApiService: Reservation $reservationId deleted successfully.');
       } else {
         print('ApiService Error (deleteReservation): ${response.statusCode} - ${response.body}');

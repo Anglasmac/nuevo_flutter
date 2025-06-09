@@ -1,0 +1,237 @@
+import 'package:flutter/material.dart';
+import 'package:nuevo_proyecto_flutter/features/employees/models/employee_performance_model.dart';
+import 'package:nuevo_proyecto_flutter/features/employees/screens/employee_detail_screen.dart';
+// Asegúrate de que la ruta al servicio sea la correcta
+import 'package:nuevo_proyecto_flutter/features/employees/services/employee_service.dart';
+
+class EmployeeListScreen extends StatefulWidget {
+  const EmployeeListScreen({super.key});
+
+  @override
+  State<EmployeeListScreen> createState() => _EmployeeListScreenState();
+}
+
+class _EmployeeListScreenState extends State<EmployeeListScreen> {
+  final EmployeeService _employeeService = EmployeeService();
+  late Future<List<EmployeePerformance>> _employeesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  void _loadData() {
+    setState(() {
+      _employeesFuture = _employeeService.fetchEmployeePerformance();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Rendimiento de Empleados'),
+        elevation: 1,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: RefreshIndicator(
+        onRefresh: () async => _loadData(),
+        child: FutureBuilder<List<EmployeePerformance>>(
+          future: _employeesFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _buildErrorWidget(context, snapshot.error);
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return _buildEmptyStateWidget(context);
+            }
+
+            final employees = snapshot.data!;
+            return ListView.builder(
+              padding: const EdgeInsets.all(8.0),
+              itemCount: employees.length,
+              itemBuilder: (context, index) {
+                return _buildEmployeeCard(context, employees[index]);
+              },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmployeeCard(BuildContext context, EmployeePerformance employee) {
+    final theme = Theme.of(context);
+    
+    // Para mayor claridad, guardamos el nombre en una variable local
+    final name = employee.fullName;
+
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => EmployeeDetailScreen(employee: employee)),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: theme.colorScheme.primaryContainer,
+                child: Text(
+                  // ====================== CORRECCIÓN 1 ======================
+                  // Primero, verificamos si el nombre no es nulo Y no está vacío.
+                  // Si ambas condiciones se cumplen, obtenemos la inicial.
+                  // Si no, mostramos un '?' como fallback.
+                  (name != null && name.isNotEmpty) ? name.substring(0, 1).toUpperCase() : '?',
+                  // ==========================================================
+                  style: TextStyle(fontSize: 20, color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ====================== CORRECCIÓN 2 ======================
+                    // Usamos el operador `??` (null-coalescing) para dar un valor por defecto.
+                    // Si `employee.fullName` es nulo, usará 'Empleado sin nombre'.
+                    Text(
+                      employee.fullName ?? 'Empleado sin nombre',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+                    ),
+                    // ==========================================================
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStatChip(
+                            context,
+                            Icons.hourglass_top_outlined,
+                            '${employee.inProgressOrdersCount ?? 0} Pasos Activos',
+                            Colors.orange,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStatChip(
+                            context,
+                            Icons.check_circle_outline,
+                            '${employee.completedOrdersCount ?? 0} Pasos Terminados',
+                            Colors.green,
+                          ),
+                        ),
+                      ],
+                    )
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatChip(BuildContext context, IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+   Widget _buildEmptyStateWidget(BuildContext context) {
+    return LayoutBuilder(builder: (context, constraints) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people_outline, size: 80, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No se encontraron empleados', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                const SizedBox(height: 8),
+                Text(
+                  'Intenta refrescar la lista o crea nuevos empleados en el sistema.',
+                  style: TextStyle(color: Colors.grey[600]),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  Widget _buildErrorWidget(BuildContext context, Object? error) {
+     return LayoutBuilder(builder: (context, constraints) {
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.cloud_off, size: 80, color: Colors.red[300]),
+                    const SizedBox(height: 16),
+                    const Text('Ocurrió un error', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text(
+                      'No se pudo cargar el rendimiento. Por favor, verifica tu conexión e intenta de nuevo.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reintentar'),
+                      onPressed: _loadData,
+                    )
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+     });
+  }
+}
