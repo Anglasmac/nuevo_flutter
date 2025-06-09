@@ -1,112 +1,170 @@
-// lib/features/auth/services/auth_service.dart
-import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:nuevo_proyecto_flutter/app/config/app_config.dart'; // Ajusta la ruta
-import 'package:nuevo_proyecto_flutter/features/auth/models/login_response_model.dart'; // Ajusta la ruta
-// Ajusta la ruta
+import 'dart:convert';
+import 'dart:io';
 
-const String _tokenKey = 'auth_token';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+// Asegúrate de que esta ruta sea correcta para tu proyecto
+import 'package:nuevo_proyecto_flutter/app/config/app_config.dart';
+
+// Las claves de almacenamiento no cambian.
+class AuthStorageKeys {
+  static const String token = 'token';
+  static const String user = 'authUser';
+  static const String permissions = 'effectivePermissions';
+}
 
 class AuthService {
-  final Dio _dio = Dio(); // Puedes configurar Dio con interceptores más adelante
 
-  Future<LoginResponse> login(String email, String password) async {
-    const String loginEndpoint = "/api/auth/login";
-    const String url = AppConfig.apiBaseUrl + loginEndpoint;
+  Future<bool> login(String email, String password) async {
+    final Uri url = Uri.parse('${AppConfig.apiBaseUrl}/auth/login');
+    print('[AuthService] Intentando login en: $url');
 
     try {
-      final response = await _dio.post(
+      final response = await http.post(
         url,
-        data: {
-          'email': email,
-          'password': password,
-        },
+        headers: {'Content-Type': 'application/json; charset=UTF-8'},
+        body: jsonEncode({'email': email, 'password': password}),
       );
 
-      if (response.statusCode == 200 && response.data != null) {
-        final loginData = LoginResponse.fromJson(response.data as Map<String, dynamic>);
-        await _storeToken(loginData.token);
-        return loginData;
-      } else {
-        // Manejar otros códigos de estado si es necesario, o confiar en DioException
-        throw Exception('Respuesta inesperada del servidor.');
-      }
-    } on DioException catch (e) {
-      // DioException proporciona más detalles sobre el error HTTP
-      String errorMessage = "Error de conexión. Inténtalo de nuevo.";
-      if (e.response != null) {
-        // El servidor respondió con un código de error (4xx, 5xx)
-        if (kDebugMode) {
-          print("Error en login (Dio): ${e.response?.statusCode} - ${e.response?.data}");
-        }
-        final responseData = e.response?.data;
-        if (responseData is Map && responseData.containsKey('message')) {
-          errorMessage = responseData['message'];
-        } else if (e.response?.statusCode == 401) {
-          errorMessage = "Credenciales incorrectas.";
+      final Map<String, dynamic> data = jsonDecode(response.body);
+
+      if (response.statusCode == 200) {
+        if (data.containsKey('token') && data.containsKey('user') && data.containsKey('effectivePermissions')) {
+          final String token = data['token'];
+          final Map<String, dynamic> user = data['user'];
+          final Map<String, dynamic> permissions = data['effectivePermissions'];
+
+          print('[AuthService DEBUG] Contenido del objeto USER recibido: $user'); 
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(AuthStorageKeys.token, token);
+          await prefs.setString(AuthStorageKeys.user, jsonEncode(user));
+          await prefs.setString(AuthStorageKeys.permissions, jsonEncode(permissions));
+
+          print('[AuthService] Login exitoso. Token, usuario y permisos guardados.');
+          
+          // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
+          // Devolvemos 'true' para indicar que el login fue exitoso,
+          // cumpliendo con la firma del método Future<bool>.
+          return true;
+
         } else {
-          errorMessage = "Error del servidor: ${e.response?.statusCode}";
+          throw Exception('Respuesta inválida del servidor (faltan datos).');
         }
       } else {
-        // Error de red, timeout, etc.
-        if (kDebugMode) {
-          print("Error en login (Dio - sin respuesta): ${e.message}");
-        }
+        final errorMessage = data['message'] ?? 'Error de autenticación.';
+        throw Exception(errorMessage);
       }
-      throw Exception(errorMessage); // Lanza una excepción más amigable
+    } on SocketException {
+       throw Exception('No se pudo conectar al servidor. Revisa tu conexión y la URL: ${AppConfig.apiBaseUrl}');
     } catch (e) {
-      // Otro tipo de error
-      if (kDebugMode) {
-        print("Error desconocido en login: $e");
-      }
-      throw Exception('Ocurrió un error inesperado. Inténtalo de nuevo.');
+      print('[AuthService] Excepción en login: $e');
+      await clearClientSession();
+      // Si ocurre cualquier error, relanzamos la excepción,
+      // y el que llame a esta función puede devolver 'false' si lo desea.
+      rethrow;
     }
   }
 
-  Future<void> _storeToken(String token) async {
+  Future<Map<String, dynamic>> getPermissions() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
+    final permissionsString = prefs.getString(AuthStorageKeys.permissions);
+
+    if (permissionsString != null && permissionsString.isNotEmpty) {
+      try {
+        final decodedData = jsonDecode(permissionsString);
+        if (decodedData is Map<String, dynamic>) {
+          return decodedData;
+        } else {
+          print('[AuthService] Alerta: Los permisos guardados no son un Mapa. Se devolverá un mapa vacío.');
+          return {};
+        }
+      } catch (e) {
+        print('[AuthService] Error al decodificar los permisos: $e. Se devolverá un mapa vacío.');
+        return {};
+      }
+    }
+    return {};
+  }
+
+  Future<bool> hasPermission(String screen, String privilege) async {
+    final permissions = await getPermissions();
+    
+    if (permissions.isNotEmpty && permissions.containsKey(screen)) {
+      final List<dynamic> privileges = permissions[screen] as List<dynamic>;
+      return privileges.contains(privilege);
+    }
+    
+    return false;
+  }
+  
+  Future<void> logout() async {
+    try {
+      final token = await getToken();
+      if (token != null) {
+        final url = Uri.parse('${AppConfig.apiBaseUrl}/auth/logout');
+        await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+            'Authorization': 'Bearer $token',
+          },
+        );
+        print('[AuthService] Petición de logout al backend enviada.');
+      }
+    } catch (e) {
+       print('[AuthService] Error en petición de logout al backend (se ignorará): $e');
+    }
+    await clearClientSession();
+  }
+
+  Future<void> clearClientSession() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(AuthStorageKeys.token);
+    await prefs.remove(AuthStorageKeys.user);
+    await prefs.remove(AuthStorageKeys.permissions);
+    print('[AuthService] Sesión del cliente (token, user, permissions) limpiada.');
   }
 
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
+    return prefs.getString(AuthStorageKeys.token);
   }
 
-  Future<void> logout() async {
+  Future<Map<String, dynamic>?> getUser() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    // Aquí podrías querer notificar al resto de la app para que vuelva al login,
-    // usualmente a través de un gestor de estado.
+    final userString = prefs.getString(AuthStorageKeys.user);
+    if (userString != null) {
+      return jsonDecode(userString) as Map<String, dynamic>;
+    }
+    return null;
+  }
+  
+  Future<String> getRoleName() async {
+    final user = await getUser();
+
+    if (user != null && user.containsKey('idRole')) {
+      final dynamic roleIdValue = user['idRole'];
+      
+      if (roleIdValue is int) {
+        final int roleId = roleIdValue;
+        
+        switch (roleId) {
+          case 1:
+            return 'Administrador';
+          case 2:
+            return 'Empleado';
+          default:
+            return 'Rol ID $roleId (Desconocido)';
+        }
+      }
+    }
+    
+    return 'Sin Rol Definido';
   }
 
-  // Opcional: para configurar un cliente Dio con interceptor de token para otras llamadas API
-  Dio getDioClientWithAuth() {
-    final dioClient = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl));
-    dioClient.interceptors.add(
-      InterceptorsWrapper(
-        onRequest: (options, handler) async {
-          final token = await getToken();
-          if (token != null) {
-            options.headers['Authorization'] = 'Bearer $token';
-          }
-          return handler.next(options); // Continúa con la petición
-        },
-        onError: (DioException e, handler) async {
-          if (e.response?.statusCode == 401) {
-            // Token inválido o expirado
-            await logout(); // Limpia el token
-            // Aquí podrías redirigir al login globalmente usando un gestor de estado
-            // o un callback si este DioClient es usado por múltiples servicios.
-            if (kDebugMode) {
-              print("Error 401: Token inválido/expirado. Sesión cerrada.");
-            }
-          }
-          return handler.next(e); // Continúa con el error
-        },
-      ),
-    );
-    return dioClient;
+  Future<bool> isAuthenticated() async {
+    final token = await getToken();
+    return token != null && token.isNotEmpty;
   }
 }

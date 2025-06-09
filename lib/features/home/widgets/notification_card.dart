@@ -3,64 +3,72 @@ import 'package:flutter/material.dart';
 
 // Widget específico para mostrar la tarjeta de notificación en la LandingScreen
 class NotificationCard extends StatelessWidget {
-  const NotificationCard({super.key});
+  final String userName;
+  final String notificationText;
+  final String buttonText;
+  final VoidCallback onButtonPressed;
+  final String imageUrl; // URL o asset de la imagen
+
+  const NotificationCard({
+    super.key,
+    required this.userName,
+    required this.notificationText,
+    required this.buttonText,
+    required this.onButtonPressed,
+    this.imageUrl = 'assets/images/welcome_banner.jpg', // Imagen por defecto
+  });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context); // Acceder al tema
+    final theme = Theme.of(context);
 
-    return Card( // Envuelve en una Card para darle elevación y forma
-      elevation: 2.0,
-      margin: EdgeInsets.zero, // Quitamos el margen por defecto de Card si el padding se maneja afuera
+    return Card(
+      elevation: 4.0, // Un poco más de elevación para destacarla
+      margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      clipBehavior: Clip.antiAlias, // Para que la imagen respete los bordes redondeados
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Imagen destacada
-          // Usar Hero si planeas una transición animada a otra pantalla con la misma imagen
           Hero(
-            tag: 'notificationImage', // Un tag único para la animación Hero
+            tag: 'notificationImage', // Tag único
             child: Image.asset(
-              'assets/images/comida2.jpg', // Verifica esta ruta en tu pubspec.yaml
-              width: double.infinity, // Ocupa todo el ancho de la Card
-              height: 150.0, // Altura fija para la imagen
-              fit: BoxFit.cover, // Escala la imagen para cubrir el espacio
-              errorBuilder: (context, error, stackTrace) => Container( // Placeholder si la imagen falla
+              imageUrl, // Usa la imagen pasada como parámetro
+              width: double.infinity,
+              height: 150.0,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
                   height: 150,
                   color: Colors.grey[300],
-                  child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey))
+                  child: Center(child: Icon(Icons.image_not_supported, color: Colors.grey[600]))
               ),
             ),
           ),
-          // Contenido de texto debajo de la imagen
+          // Contenido de texto
           Padding(
-            padding: const EdgeInsets.all(16.0), // Padding interno para el texto
+            padding: const EdgeInsets.all(16.0),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Saludo o título principal de la notificación
+                // Saludo o título principal
                 Text(
-                  'Bienvenida, Lina', // Podría venir de los datos del usuario
-                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600), // Estilo del tema
+                  'Hola, $userName', // Saludo personalizado
+                  style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8.0), // Espacio entre textos
-                // Texto de la notificación
+                const SizedBox(height: 8.0),
+                // Texto de la notificación (ahora dinámico)
                 Text(
-                  'Notificación: Hay nuevas órdenes de producción listas para revisar en la sección correspondiente.', // Texto más detallado
-                  style: theme.textTheme.bodyMedium, // Estilo del tema para cuerpo de texto
+                  notificationText,
+                  style: theme.textTheme.bodyMedium,
                 ),
-                 const SizedBox(height: 12.0),
-                 // Opcional: Botón de acción dentro de la tarjeta
+                 const SizedBox(height: 16.0),
+                 // Botón de acción
                  Align(
                    alignment: Alignment.centerRight,
                    child: TextButton(
-                     onPressed: () {
-                       ScaffoldMessenger.of(context).showSnackBar(
-                         const SnackBar(content: Text('Ir a Órdenes (Pendiente)')),
-                       );
-                     },
-                     child: const Text('Ver Órdenes'),
+                     onPressed: onButtonPressed, // Usa el callback pasado
+                     child: Text(buttonText), // Texto del botón dinámico
                    ),
                  )
               ],

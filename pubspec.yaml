@@ -32,6 +32,7 @@ dependencies:
 
   dio: ^5.4.0 # O la última versión estable
   shared_preferences: ^2.2.2 # O la última versión estable
+  provider: ^6.1.1 
 
   
   http: ^1.2.2
@@ -53,7 +54,8 @@ flutter:
   # Descomenta y define la carpeta donde están tus imágenes
   assets:
     # Asegúrate que la ruta sea correcta desde la raíz de tu proyecto
-    - lib/assets/images/
+    - assets/images/
+    - assets/images/
 
   # === FIN SECCIÓN DE ASSETS ===
 
