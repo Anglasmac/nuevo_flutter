@@ -1,11 +1,9 @@
 // lib/features/reservas/screens/create_reservation_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-// Ajusta estas rutas según tu estructura y nombre de paquete
 import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/widgets/reservation_form.dart';
 import 'package:nuevo_proyecto_flutter/services/api_service.dart';
-
 
 class CreateReservationScreen extends StatefulWidget {
   final DateTime? selectedDate;
@@ -20,44 +18,51 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
   final ApiService _apiService = ApiService();
   bool _isSaving = false;
 
-  // Este método será llamado por ReservationFormWidget cuando el usuario guarde
-  // O puedes mover la lógica de guardado aquí si ReservationFormWidget solo devuelve los datos.
   Future<void> _handleSaveReservation(Reserva formData) async {
     setState(() {
       _isSaving = true;
     });
 
-    // Construye el objeto Reserva con los datos del formulario
-    // El ID será null si el backend lo genera.
-    // El color puede ser uno por defecto o seleccionado en el form.
+    // ===== CORRECCIÓN 3 =====
+    // Aquí construimos el objeto final para la API. Ya viene bien construido
+    // desde el `ReservationForm`, así que solo lo pasamos.
+    // Si necesitáramos reconstruirlo, usaríamos `reservationDate:`
     final Reserva newReservationToApi = Reserva(
       eventName: formData.eventName,
-      eventDateTime: formData.eventDateTime, // Asegúrate que el form provea la fecha y hora correctas
+      reservationDate: formData.reservationDate, // Usamos el nombre de parámetro correcto
       location: formData.location,
       notes: formData.notes,
-      color: formData.color, // O un color por defecto si no se selecciona en el form
+      color: formData.color,
     );
 
     try {
       final Reserva createdReservation = await _apiService.createReservation(newReservationToApi);
       
+      if (!mounted) return; // Buena práctica: verificar si el widget sigue en pantalla
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reservación "${createdReservation.eventName}" creada con ID: ${createdReservation.id}')),
+        SnackBar(content: Text('Reservación "${createdReservation.eventName}" creada con éxito.')),
       );
-      Navigator.of(context).pop(true); // Devuelve true para indicar éxito y recargar en la pantalla anterior
+      Navigator.of(context).pop(true);
 
     } catch (e) {
+      if (!mounted) return;
+      
       print("Error al crear reserva en pantalla: $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al crear reservación: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error al crear reservación: ${e.toString()}'),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } finally {
-      setState(() {
-        _isSaving = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -72,13 +77,12 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
            onPressed: () => Navigator.maybePop(context),
         ),
       ),
-      body: Stack( // Usamos Stack para superponer el indicador de carga
+      body: Stack(
         children: [
           SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
-            child: ReservationForm( // Asume que ReservationForm tiene un callback onSave
+            child: ReservationForm(
               initialDate: widget.selectedDate,
-              // El onSave de ReservationForm debería devolver un objeto Reserva poblado
               onSave: (Reserva reservaDelFormulario) { 
                 _handleSaveReservation(reservaDelFormulario);
               },
