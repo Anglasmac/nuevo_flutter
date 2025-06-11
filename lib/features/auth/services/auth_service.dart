@@ -1,22 +1,25 @@
+// lib/services/auth_service.dart
+
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-// Asegúrate de que esta ruta sea correcta para tu proyecto
-import 'package:nuevo_proyecto_flutter/app/config/app_config.dart';
+// <-- REFACTORIZACIÓN: Se importa la clase base para unificar la configuración.
+import 'package:nuevo_proyecto_flutter/services/ase_api_service.dart'; 
 
-// Las claves de almacenamiento no cambian.
+// Las claves para SharedPreferences no cambian.
 class AuthStorageKeys {
   static const String token = 'token';
   static const String user = 'authUser';
   static const String permissions = 'effectivePermissions';
 }
 
-class AuthService {
+// <-- REFACTORIZACIÓN: AuthService ahora extiende BaseApiService.
+class AuthService extends BaseApiService {
 
   Future<bool> login(String email, String password) async {
-    final Uri url = Uri.parse('${AppConfig.apiBaseUrl}/auth/login');
+    // <-- REFACTORIZACIÓN: Usa `baseUrl` heredado en lugar de `AppConfig`.
+    final Uri url = Uri.parse('$baseUrl/auth/login');
     print('[AuthService] Intentando login en: $url');
 
     try {
@@ -34,7 +37,9 @@ class AuthService {
           final Map<String, dynamic> user = data['user'];
           final Map<String, dynamic> permissions = data['effectivePermissions'];
 
-          print('[AuthService DEBUG] Contenido del objeto USER recibido: $user'); 
+          // <-- INTEGRACIÓN CLAVE: Informamos a la clase base del nuevo token.
+          // Ahora todos los demás servicios usarán este token automáticamente.
+          BaseApiService.setAuthToken(token);
 
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(AuthStorageKeys.token, token);
@@ -42,10 +47,6 @@ class AuthService {
           await prefs.setString(AuthStorageKeys.permissions, jsonEncode(permissions));
 
           print('[AuthService] Login exitoso. Token, usuario y permisos guardados.');
-          
-          // --- ¡AQUÍ ESTÁ LA CORRECCIÓN! ---
-          // Devolvemos 'true' para indicar que el login fue exitoso,
-          // cumpliendo con la firma del método Future<bool>.
           return true;
 
         } else {
@@ -56,53 +57,20 @@ class AuthService {
         throw Exception(errorMessage);
       }
     } on SocketException {
-       throw Exception('No se pudo conectar al servidor. Revisa tu conexión y la URL: ${AppConfig.apiBaseUrl}');
+       throw Exception('No se pudo conectar al servidor. Revisa tu conexión y la URL: $baseUrl');
     } catch (e) {
       print('[AuthService] Excepción en login: $e');
       await clearClientSession();
-      // Si ocurre cualquier error, relanzamos la excepción,
-      // y el que llame a esta función puede devolver 'false' si lo desea.
       rethrow;
     }
   }
 
-  Future<Map<String, dynamic>> getPermissions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final permissionsString = prefs.getString(AuthStorageKeys.permissions);
-
-    if (permissionsString != null && permissionsString.isNotEmpty) {
-      try {
-        final decodedData = jsonDecode(permissionsString);
-        if (decodedData is Map<String, dynamic>) {
-          return decodedData;
-        } else {
-          print('[AuthService] Alerta: Los permisos guardados no son un Mapa. Se devolverá un mapa vacío.');
-          return {};
-        }
-      } catch (e) {
-        print('[AuthService] Error al decodificar los permisos: $e. Se devolverá un mapa vacío.');
-        return {};
-      }
-    }
-    return {};
-  }
-
-  Future<bool> hasPermission(String screen, String privilege) async {
-    final permissions = await getPermissions();
-    
-    if (permissions.isNotEmpty && permissions.containsKey(screen)) {
-      final List<dynamic> privileges = permissions[screen] as List<dynamic>;
-      return privileges.contains(privilege);
-    }
-    
-    return false;
-  }
-  
   Future<void> logout() async {
     try {
       final token = await getToken();
       if (token != null) {
-        final url = Uri.parse('${AppConfig.apiBaseUrl}/auth/logout');
+        // <-- REFACTORIZACIÓN: Usa `baseUrl` heredado.
+        final url = Uri.parse('$baseUrl/auth/logout');
         await http.post(
           url,
           headers: {
@@ -123,6 +91,10 @@ class AuthService {
     await prefs.remove(AuthStorageKeys.token);
     await prefs.remove(AuthStorageKeys.user);
     await prefs.remove(AuthStorageKeys.permissions);
+
+    // <-- INTEGRACIÓN CLAVE: Limpiamos el token en la clase base.
+    BaseApiService.clearAuthToken();
+    
     print('[AuthService] Sesión del cliente (token, user, permissions) limpiada.');
   }
 
@@ -140,26 +112,45 @@ class AuthService {
     return null;
   }
   
+  Future<Map<String, dynamic>> getPermissions() async {
+    final prefs = await SharedPreferences.getInstance();
+    final permissionsString = prefs.getString(AuthStorageKeys.permissions);
+
+    if (permissionsString != null && permissionsString.isNotEmpty) {
+      try {
+        final decodedData = jsonDecode(permissionsString);
+        if (decodedData is Map<String, dynamic>) {
+          return decodedData;
+        }
+      } catch (e) {
+        print('[AuthService] Error al decodificar los permisos: $e. Se devolverá un mapa vacío.');
+      }
+    }
+    return {};
+  }
+
+  Future<bool> hasPermission(String screen, String privilege) async {
+    final permissions = await getPermissions();
+    
+    if (permissions.isNotEmpty && permissions.containsKey(screen)) {
+      final List<dynamic> privileges = permissions[screen];
+      return privileges.contains(privilege);
+    }
+    return false;
+  }
+
   Future<String> getRoleName() async {
     final user = await getUser();
-
     if (user != null && user.containsKey('idRole')) {
       final dynamic roleIdValue = user['idRole'];
-      
       if (roleIdValue is int) {
-        final int roleId = roleIdValue;
-        
-        switch (roleId) {
-          case 1:
-            return 'Administrador';
-          case 2:
-            return 'Empleado';
-          default:
-            return 'Rol ID $roleId (Desconocido)';
+        switch (roleIdValue) {
+          case 1: return 'Administrador';
+          case 2: return 'Empleado';
+          default: return 'Rol ID $roleIdValue (Desconocido)';
         }
       }
     }
-    
     return 'Sin Rol Definido';
   }
 

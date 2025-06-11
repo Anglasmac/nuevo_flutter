@@ -2,19 +2,14 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-
-// CORRECCIÓN: Estandarizamos las rutas de importación para mayor consistencia.
 import 'package:nuevo_proyecto_flutter/features/product/models/product_model.dart';
+// <-- CORRECCIÓN: El nombre del archivo importado es ahora 'base_api_service.dart'.
 import 'package:nuevo_proyecto_flutter/services/ase_api_service.dart';
 
 class ProductService extends BaseApiService {
   
-  // --- MÉTODOS PARA EL ENDPOINT DE PRODUCTOS (/product) ---
-
-  /// GET /product - Obtiene la lista de todos los productos.
   Future<List<Product>> fetchProducts() async {
-    // Esta ruta ya es correcta.
-    final Uri url = Uri.parse('$baseUrl/product'); 
+    final Uri url = Uri.parse('$baseUrl/product');
     print('ProductService: GET $url');
     
     try {
@@ -34,11 +29,7 @@ class ProductService extends BaseApiService {
     }
   }
 
-  // --- MÉTODOS PARA EL ENDPOINT DE FICHAS TÉCNICAS (/specSheet) ---
-
-  /// GET /specSheet/by-product/:productId - Obtiene las fichas técnicas para un producto específico.
   Future<List<FichaTecnica>> fetchFichasByProductId(int productId) async {
-    // CORRECCIÓN: La ruta del backend es '/by-product/:idProduct'.
     final Uri url = Uri.parse('$baseUrl/specSheet/by-product/$productId');
     print('ProductService: GET $url');
     
@@ -59,23 +50,19 @@ class ProductService extends BaseApiService {
     }
   }
 
-  /// PATCH /specSheet/:id/status - Cambia el estado de una ficha técnica.
   Future<void> setFichaStatus(int fichaId, bool newStatus) async {
-    // La ruta del backend usa el parámetro ':id' para la ficha.
     final Uri url = Uri.parse('$baseUrl/specSheet/$fichaId/status');
     final String requestBody = json.encode({'status': newStatus});
     
-    // CORRECCIÓN: El método en el backend es PATCH, no PUT.
     print('ProductService: PATCH $url with body: $requestBody');
     
     try {
-      final response = await http.patch( // <-- CORREGIDO a http.patch
+      final response = await http.patch(
         url,
-        headers: commonHeaders, 
+        headers: commonHeaders,
         body: requestBody,
       );
 
-      // Un PATCH/PUT exitoso puede devolver 200 (OK) o 204 (No Content).
       if (response.statusCode == 200 || response.statusCode == 204) {
         print('ProductService: Spec sheet $fichaId status updated successfully.');
       } else {
