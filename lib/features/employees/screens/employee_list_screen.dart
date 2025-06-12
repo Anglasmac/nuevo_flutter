@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/models/employee_performance_model.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/screens/employee_detail_screen.dart';
-// Asegúrate de que la ruta al servicio sea la correcta
 import 'package:nuevo_proyecto_flutter/features/employees/services/employee_service.dart';
 
 class EmployeeListScreen extends StatefulWidget {
@@ -15,6 +14,11 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   final EmployeeService _employeeService = EmployeeService();
   late Future<List<EmployeePerformance>> _employeesFuture;
 
+  // --- INICIO: VARIABLES PARA PAGINACIÓN ---
+  int _currentPage = 0;
+  final int _itemsPerPage = 4;
+  // --- FIN: VARIABLES PARA PAGINACIÓN ---
+
   @override
   void initState() {
     super.initState();
@@ -22,9 +26,12 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   }
 
   void _loadData() {
-    setState(() {
-      _employeesFuture = _employeeService.fetchEmployeePerformance();
-    });
+    if (mounted) {
+      setState(() {
+        _currentPage = 0; // Resetea la página al cargar/refrescar
+        _employeesFuture = _employeeService.fetchEmployeePerformance();
+      });
+    }
   }
 
   @override
@@ -52,31 +59,106 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
             }
 
             final employees = snapshot.data!;
-            return ListView.builder(
-              padding: const EdgeInsets.all(8.0),
-              itemCount: employees.length,
-              itemBuilder: (context, index) {
-                return _buildEmployeeCard(context, employees[index]);
-              },
-            );
+            
+            // --- INICIO: LÓGICA DE PAGINACIÓN ---
+            if (employees.length <= _itemsPerPage) {
+              // Sin paginación si hay pocos elementos
+              return ListView.builder(
+                padding: const EdgeInsets.all(8.0),
+                itemCount: employees.length,
+                itemBuilder: (context, index) {
+                  return _buildEmployeeCard(context, employees[index]);
+                },
+              );
+            } else {
+              // Con paginación si hay muchos elementos
+              final totalPages = (employees.length / _itemsPerPage).ceil();
+              if (_currentPage >= totalPages) _currentPage = totalPages - 1;
+
+              final startIndex = _currentPage * _itemsPerPage;
+              final endIndex = (startIndex + _itemsPerPage > employees.length)
+                  ? employees.length
+                  : startIndex + _itemsPerPage;
+              
+              final paginatedEmployees = employees.sublist(startIndex, endIndex);
+
+              return Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(8.0),
+                      itemCount: paginatedEmployees.length,
+                      itemBuilder: (context, index) {
+                        return _buildEmployeeCard(context, paginatedEmployees[index]);
+                      },
+                    ),
+                  ),
+                  _buildPaginator(totalPages),
+                ],
+              );
+            }
+            // --- FIN: LÓGICA DE PAGINACIÓN ---
           },
         ),
       ),
     );
   }
 
+  // --- NUEVO WIDGET: PAGINADOR REDONDO (Reutilizado de Productos) ---
+  Widget _buildPaginator(int totalPages) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(totalPages, (index) {
+          final bool isActive = index == _currentPage;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _currentPage = index;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              margin: const EdgeInsets.symmetric(horizontal: 5.0),
+              width: 32.0,
+              height: 32.0,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceVariant,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isActive
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
   Widget _buildEmployeeCard(BuildContext context, EmployeePerformance employee) {
     final theme = Theme.of(context);
-    
-    // Para mayor claridad, guardamos el nombre en una variable local
     final name = employee.fullName;
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.08),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           Navigator.push(
             context,
@@ -88,16 +170,11 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
           child: Row(
             children: [
               CircleAvatar(
-                radius: 24,
+                radius: 28,
                 backgroundColor: theme.colorScheme.primaryContainer,
                 child: Text(
-                  // ====================== CORRECCIÓN 1 ======================
-                  // Primero, verificamos si el nombre no es nulo Y no está vacío.
-                  // Si ambas condiciones se cumplen, obtenemos la inicial.
-                  // Si no, mostramos un '?' como fallback.
                   (name != null && name.isNotEmpty) ? name.substring(0, 1).toUpperCase() : '?',
-                  // ==========================================================
-                  style: TextStyle(fontSize: 20, color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 22, color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(width: 16),
@@ -105,14 +182,10 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ====================== CORRECCIÓN 2 ======================
-                    // Usamos el operador `??` (null-coalescing) para dar un valor por defecto.
-                    // Si `employee.fullName` es nulo, usará 'Empleado sin nombre'.
                     Text(
                       employee.fullName ?? 'Empleado sin nombre',
                       style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
                     ),
-                    // ==========================================================
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -120,7 +193,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                           child: _buildStatChip(
                             context,
                             Icons.hourglass_top_outlined,
-                            '${employee.inProgressOrdersCount ?? 0} Pasos Activos',
+                            '${employee.inProgressOrdersCount ?? 0} Activos',
                             Colors.orange,
                           ),
                         ),
@@ -129,7 +202,7 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
                           child: _buildStatChip(
                             context,
                             Icons.check_circle_outline,
-                            '${employee.completedOrdersCount ?? 0} Pasos Terminados',
+                            '${employee.completedOrdersCount ?? 0} Terminados',
                             Colors.green,
                           ),
                         ),
@@ -149,10 +222,10 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
 
   Widget _buildStatChip(BuildContext context, IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
