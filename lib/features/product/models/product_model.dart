@@ -1,32 +1,37 @@
-// lib/features/products/models/product_model.dart
+import 'package:flutter/foundation.dart';
 
 class FichaTecnica {
-  final int id; // idSpecSheet
-  final String nombre; // versionName
-  bool activo; // status
+  final int id;
+  final String nombre;
+  final bool status;
 
   FichaTecnica({
     required this.id,
     required this.nombre,
-    required this.activo,
+    required this.status,
   });
 
   factory FichaTecnica.fromJson(Map<String, dynamic> json) {
-    // El nombre de la ficha puede venir en 'versionName'
+    if (kDebugMode) {
+      print('Datos de Ficha recibidos desde la API: $json');
+    }
     return FichaTecnica(
-      id: json['idSpecSheet'] ?? 0,
-      nombre: json['versionName'] ?? 'Ficha sin nombre',
-      activo: json['status'] ?? false,
+      id: json['idSpecSheet'] as int? ?? 0,
+      nombre: json['versionName'] as String? ?? 'Ficha sin nombre',
+      status: json['status'] as bool? ?? false,
     );
   }
 }
 
 class Product {
-  final int id; // idProduct
-  final String nombre; // productName
-  final int minimo; // minStock
-  final int maximo; // maxStock
-  final int specSheetCount; // El contador que viene del backend
+  final int id;
+  final String nombre;
+  final int minimo;
+  final int maximo;
+  final int specSheetCount;
+  // ==================== CAMPO AÑADIDO AQUÍ ====================
+  final int? activeSpecSheetId;
+  // ==========================================================
 
   Product({
     required this.id,
@@ -34,6 +39,7 @@ class Product {
     required this.minimo,
     required this.maximo,
     required this.specSheetCount,
+    this.activeSpecSheetId, // <-- Añadido al constructor
   });
 
   factory Product.fromJson(Map<String, dynamic> json) {
@@ -42,8 +48,9 @@ class Product {
       nombre: json['productName'] ?? 'Producto Desconocido',
       minimo: json['minStock'] ?? 0,
       maximo: json['maxStock'] ?? 0,
-      // Leemos el contador, casteando a int por seguridad
       specSheetCount: int.tryParse(json['specSheetCount']?.toString() ?? '0') ?? 0,
+      // Leemos el nuevo campo desde el JSON que envía tu API
+      activeSpecSheetId: json['activeSpecSheetId'] as int?,
     );
   }
 }

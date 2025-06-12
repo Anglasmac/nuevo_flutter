@@ -186,11 +186,7 @@ class _LandingScreenState extends State<LandingScreen> {
                spacing: 12.0,
                runSpacing: 12.0,
                children: [
-                 ElevatedButton.icon(
-                   onPressed: () {},
-                   icon: const Icon(Icons.add_circle_outline),
-                   label: const Text('Nueva Orden'),
-                 ),
+                 
                   ElevatedButton.icon(
                    onPressed: () {},
                    icon: const Icon(Icons.event_available),

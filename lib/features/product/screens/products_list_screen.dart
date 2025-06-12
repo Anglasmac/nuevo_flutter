@@ -1,8 +1,8 @@
-// lib/features/products/screens/products_list_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:nuevo_proyecto_flutter/features/product/models/product_model.dart';
+// Importamos las DOS pantallas de detalle
 import 'package:nuevo_proyecto_flutter/features/product/screens/product_detail_screen.dart';
+import 'package:nuevo_proyecto_flutter/features/product/screens/spec_sheet_detail_screen.dart';
 import 'package:nuevo_proyecto_flutter/services/product_service.dart';
 
 class ProductsListScreen extends StatefulWidget {
@@ -16,6 +16,9 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
   final ProductService _productService = ProductService();
   late Future<List<Product>> _productsFuture;
 
+  int _currentPage = 0;
+  final int _itemsPerPage = 4;
+
   @override
   void initState() {
     super.initState();
@@ -23,9 +26,12 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
   }
 
   void _loadProducts() {
-    setState(() {
-      _productsFuture = _productService.fetchProducts();
-    });
+    if (mounted) {
+      setState(() {
+        _currentPage = 0; 
+        _productsFuture = _productService.fetchProducts();
+      });
+    }
   }
 
   @override
@@ -58,64 +64,160 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return _buildEmptyStateWidget();
             }
+
             final products = snapshot.data!;
-            // CAMBIO: Ya no usamos ListView.separated. El margen de las Cards crea la separación.
-            return ListView.builder(
-              padding: const EdgeInsets.only(top: 8.0, bottom: 8.0), // Padding solo arriba y abajo
-              itemCount: products.length,
-              itemBuilder: (context, index) {
-                final product = products[index];
-                // CAMBIO: Llamamos a nuestro nuevo widget de tarjeta.
-                return _buildProductCard(context, product);
-              },
-            );
+
+            if (products.length <= _itemsPerPage) {
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                itemCount: products.length,
+                itemBuilder: (context, index) {
+                  return _buildProductCard(context, products[index]);
+                },
+              );
+            } else {
+              final totalPages = (products.length / _itemsPerPage).ceil();
+              
+              if (_currentPage >= totalPages) {
+                _currentPage = totalPages - 1;
+              }
+
+              final startIndex = _currentPage * _itemsPerPage;
+              final endIndex = (startIndex + _itemsPerPage > products.length)
+                  ? products.length
+                  : startIndex + _itemsPerPage;
+              
+              final paginatedProducts = products.sublist(startIndex, endIndex);
+
+              return Column(
+                children: [
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(vertical: 8.0),
+                      itemCount: paginatedProducts.length,
+                      itemBuilder: (context, index) {
+                        return _buildProductCard(context, paginatedProducts[index]);
+                      },
+                    ),
+                  ),
+                  _buildPaginator(totalPages),
+                ],
+              );
+            }
           },
         ),
       ),
     );
   }
 
-  // --- NUEVO WIDGET DE TARJETA ---
-  // Este widget reemplaza al anterior _buildProductTile
+  Widget _buildPaginator(int totalPages) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(totalPages, (index) {
+          final bool isActive = index == _currentPage;
+          return GestureDetector(
+            onTap: () {
+              setState(() {
+                _currentPage = index;
+              });
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeInOut,
+              margin: const EdgeInsets.symmetric(horizontal: 5.0),
+              width: isActive ? 36.0 : 32.0,
+              height: isActive ? 36.0 : 32.0,
+              decoration: BoxDecoration(
+                color: isActive
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceVariant,
+                shape: BoxShape.circle,
+                boxShadow: isActive ? [
+                  BoxShadow(
+                    color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                    spreadRadius: 2,
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  )
+                ] : [],
+              ),
+              child: Center(
+                child: Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isActive
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ============================ CAMBIO CLAVE AQUÍ ============================
+  // Este widget ahora contiene la lógica para decidir a qué pantalla navegar.
   Widget _buildProductCard(BuildContext context, Product product) {
     final theme = Theme.of(context);
     
     return Card(
-      // Estilo de la tarjeta
       margin: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
+      elevation: 3,
       shadowColor: Colors.black.withOpacity(0.1),
-      clipBehavior: Clip.antiAlias, // Asegura que el InkWell respete los bordes
-
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ProductDetailScreen(product: product),
-            ),
-          ).then((value) {
-            if (value == true) {
-              _loadProducts();
-            }
-          });
+          // Si el producto ya tiene una ficha activa, muestra los detalles.
+          if (product.activeSpecSheetId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => SpecSheetDetailScreen(
+                  specSheetId: product.activeSpecSheetId!,
+                  productName: product.nombre,
+                ),
+              ),
+            );
+          } else {
+            // Si no tiene ficha activa, ve a la pantalla para seleccionar una.
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => ProductDetailScreen(product: product),
+              ),
+            ).then((value) {
+              // Si se seleccionó una ficha y volvimos, refresca la lista de productos
+              // para que la próxima vez que toquemos, el 'activeSpecSheetId' ya exista.
+              if (value == true) {
+                _loadProducts();
+              }
+            });
+          }
         },
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
             children: [
-              // Icono principal a la izquierda
               CircleAvatar(
-                radius: 24,
+                radius: 28,
                 backgroundColor: theme.colorScheme.primaryContainer,
                 child: Icon(
-                  Icons.inventory_2_outlined,
+                  // Mostramos un icono diferente si ya tiene una ficha activa.
+                  product.activeSpecSheetId != null 
+                    ? Icons.assignment_turned_in_outlined 
+                    : Icons.inventory_2_outlined,
+                  size: 28,
                   color: theme.colorScheme.onPrimaryContainer,
                 ),
               ),
               const SizedBox(width: 16),
-              // Columna central con la información principal
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -143,7 +245,6 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              // Columna derecha con el contador y la flecha
               Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -170,10 +271,8 @@ class _ProductsListScreenState extends State<ProductsListScreen> {
     );
   }
 
-  // --- WIDGETS AUXILIARES (Sin cambios, siguen siendo útiles) ---
-
   Widget _buildEmptyStateWidget() {
-    return LayoutBuilder(builder: (context, constraints) {
+     return LayoutBuilder(builder: (context, constraints) {
       return SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         child: ConstrainedBox(
