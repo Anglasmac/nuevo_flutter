@@ -23,10 +23,34 @@ abstract class BaseApiService {
 
   /// Define la URL base del backend.
   String get baseUrl {
-    // <-- CAMBIO CRUCIAL: Apuntamos directamente a la URL de producción.
-    // Toda la lógica de desarrollo local ha sido eliminada para claridad.
-    // Esta es ahora la única fuente de verdad para la URL del backend.
-    return 'https://api-foodnodedesp.onrender.com';
+    // <-- INICIO DEL CAMBIO -->
+
+    // --- CONFIGURACIÓN DE DESPLIEGUE (COMENTADA) ---
+    // Esta es la URL que se usaba para producción. La dejamos aquí por si necesitas volver a activarla.
+    // return 'https://api-foodnodedesp.onrender.com';
+
+
+    // --- CONFIGURACIÓN LOCAL (ACTIVA) ---
+    // Esta URL se usará mientras desarrollas y pruebas en tu máquina.
+    const String backendHost = "localhost"; // El host de tu backend local
+    const String backendPort = "3000";      // El puerto de tu backend local
+
+    // Lógica para determinar la IP correcta según la plataforma de desarrollo.
+    if (kIsWeb) {
+      // Para web, 'localhost' funciona directamente.
+      return 'http://$backendHost:$backendPort';
+    }
+
+    // Para móvil, necesitamos una IP específica si es el emulador de Android.
+    if (Platform.isAndroid) {
+      // El emulador de Android usa 10.0.2.2 para referirse al 'localhost' de la máquina anfitriona.
+      return 'http://10.0.2.2:$backendPort';
+    }
+
+    // Para el simulador de iOS, macOS, Windows, Linux, 'localhost' suele funcionar bien.
+    return 'http://$backendHost:$backendPort';
+    
+    // <-- FIN DEL CAMBIO -->
   }
 
   /// Define los headers comunes para todas las peticiones a la API.
