@@ -1,5 +1,3 @@
-// lib/features/products/screens/product_detail_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:nuevo_proyecto_flutter/features/product/models/product_model.dart';
 import 'package:nuevo_proyecto_flutter/services/product_service.dart';
@@ -29,7 +27,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _fichasFuture = _productService.fetchFichasByProductId(widget.product.id);
       _fichasFuture.then((fichas) {
         if (mounted) {
-          final fichaActiva = fichas.where((f) => f.activo).firstOrNull;
+          final fichaActiva = fichas.where((f) => f.status).firstOrNull;
           _activeFichaIdNotifier.value = fichaActiva?.id;
         }
       }).catchError((error) {
@@ -44,14 +42,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     setState(() { _isSaving = true; });
 
     try {
-      await _productService.setFichaStatus(newActiveId, true);
+      // ====================== CORRECCIÓN CLAVE AQUÍ ======================
+      // En lugar de llamar a setFichaStatus, llamamos al nuevo método que
+      // actualiza el campo 'activeSpecSheetId' en el producto.
+      await _productService.setActiveSpecSheet(widget.product.id, newActiveId);
+      // =================================================================
+
       _activeFichaIdNotifier.value = newActiveId;
       
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Ficha activa actualizada.'), backgroundColor: Colors.green, duration: Duration(seconds: 2)),
       );
-      // Notificamos a la pantalla anterior que hubo un cambio para que pueda refrescar la lista.
+      // Notificamos a la pantalla anterior que hubo un cambio para que pueda refrescar.
       Navigator.pop(context, true); 
     } catch (e) {
       if (!mounted) return;

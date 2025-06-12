@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-
-// --- IMPORTACIONES ---
-// Si tu servicio está en 'lib/services/employee_service.dart', cambia la ruta.
 import 'package:nuevo_proyecto_flutter/features/employees/services/employee_service.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/models/employee_performance_model.dart';
 import 'package:nuevo_proyecto_flutter/features/production/models/production_order_model.dart';
-
+// --- INICIO: NUEVA IMPORTACIÓN ---
+// Importamos la nueva pantalla de detalle de la orden.
+// Asegúrate de que la ruta sea correcta.
+import 'package:nuevo_proyecto_flutter/features/production/screens/production_order_detail_screen.dart';
+// --- FIN: NUEVA IMPORTACIÓN ---
 
 class EmployeeDetailScreen extends StatefulWidget {
   final EmployeePerformance employee;
@@ -26,39 +27,37 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     _ordersFuture = _loadOrders();
   }
 
-  /// Carga todas las órdenes del empleado y las devuelve en un mapa.
   Future<Map<String, List<ProductionOrder>>> _loadOrders() async {
     try {
       final employeeId = widget.employee.idEmployee;
-      if (employeeId == null) {
-        throw Exception("El ID del empleado es nulo.");
-      }
+      if (employeeId == null) throw Exception("El ID del empleado es nulo.");
       
       final results = await Future.wait([
         _employeeService.fetchOrdersForEmployee(employeeId, statuses: ['IN_PROGRESS', 'PAUSED']),
         _employeeService.fetchOrdersForEmployee(employeeId, statuses: ['COMPLETED']),
       ]);
       
-      return {
-        'inProgress': results[0],
-        'completed': results[1],
-      };
+      return {'inProgress': results[0], 'completed': results[1]};
     } catch (e) {
       print("Error en _loadOrders: $e");
       rethrow;
     }
   }
 
+  void _refreshOrders() {
+    setState(() {
+      _ordersFuture = _loadOrders();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        // ====================== CORRECCIÓN APLICADA AQUÍ ======================
-        // Cambiamos `employeeName` por `fullName`, que es el nombre correcto
-        // en el modelo `EmployeePerformance` que me proporcionaste anteriormente.
-        // Si el nombre en tu modelo es diferente, cámbialo aquí.
         title: Text(widget.employee.fullName ?? 'Detalle de Empleado'),
-        // ======================================================================
+        elevation: 1,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
       ),
       body: FutureBuilder<Map<String, List<ProductionOrder>>>(
         future: _ordersFuture,
@@ -67,7 +66,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text("Error al cargar órdenes: ${snapshot.error}"));
+            return _buildErrorWidget();
           }
           if (!snapshot.hasData || snapshot.data == null) {
             return const Center(child: Text("No se encontraron datos de órdenes."));
@@ -77,11 +76,7 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           final completedOrders = snapshot.data!['completed'] ?? [];
 
           return RefreshIndicator(
-            onRefresh: () async {
-              setState(() {
-                _ordersFuture = _loadOrders();
-              });
-            },
+            onRefresh: () async => _refreshOrders(),
             child: ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
@@ -96,47 +91,85 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
     );
   }
 
-  /// Widget helper para renderizar una sección de la lista de órdenes.
   Widget _buildOrderSection(BuildContext context, String title, List<ProductionOrder> orders, IconData icon, Color color) {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, color: color, size: 28),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Text(title, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const SizedBox(width: 8),
-            Text('(${orders.length})', style: theme.textTheme.titleLarge?.copyWith(color: Colors.grey[600])),
+            Text('(${orders.length})', style: theme.textTheme.titleLarge?.copyWith(color: Colors.grey[600], fontWeight: FontWeight.normal)),
           ],
         ),
-        const Divider(height: 20, thickness: 1),
+        const SizedBox(height: 8),
         if (orders.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24.0),
-            child: Center(child: Text("No hay órdenes en esta categoría.", style: TextStyle(color: Colors.grey))),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 32.0),
+            alignment: Alignment.center,
+            child: Text("No hay órdenes en esta categoría.", style: TextStyle(color: Colors.grey[600])),
           )
         else
           ...orders.map((order) {
             return Card(
-              margin: const EdgeInsets.only(bottom: 8.0),
+              margin: const EdgeInsets.only(top: 8.0),
               elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              clipBehavior: Clip.antiAlias,
               child: ListTile(
-                title: Text(order.productNameSnapshot ?? 'Producto no especificado', style: const TextStyle(fontWeight: FontWeight.w500)),
-                subtitle: Text('ID: ${order.idProductionOrder} - Estado: ${order.status}'),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                title: Text(order.productNameSnapshot ?? 'Producto no especificado', style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('ID: ${order.idProductionOrder}'),
                 trailing: order.createdAt != null
-                    ? Text(DateFormat('dd/MM/yy').format(order.createdAt!))
-                    : const Text('Sin fecha'),
+                    ? Text(DateFormat('dd/MM/yy').format(order.createdAt!), style: const TextStyle(color: Colors.grey))
+                    : const SizedBox.shrink(),
+                // --- INICIO: CAMBIO EN onTap ---
+                // Ahora navegamos a la pantalla de detalle de la orden
                 onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Viendo detalle de orden #${order.idProductionOrder}')),
-                    );
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ProductionOrderDetailScreen(order: order),
+                    ),
+                  );
                 },
+                // --- FIN: CAMBIO EN onTap ---
               ),
             );
           }).toList(),
       ],
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 80, color: Colors.red[300]),
+            const SizedBox(height: 16),
+            const Text('Ocurrió un error', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            Text(
+              'No se pudieron cargar las órdenes. Por favor, verifica tu conexión e intenta de nuevo.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+              onPressed: _refreshOrders,
+            )
+          ],
+        ),
+      ),
     );
   }
 }
