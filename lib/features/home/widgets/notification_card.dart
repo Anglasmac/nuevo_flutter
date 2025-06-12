@@ -15,7 +15,7 @@ class NotificationCard extends StatelessWidget {
     required this.notificationText,
     required this.buttonText,
     required this.onButtonPressed,
-    this.imageUrl = 'assets/images/welcome_banner.jpg', // Imagen por defecto
+    this.imageUrl = 'lib/assets/images/login.jpg', // Imagen por defecto
   });
 
   @override
