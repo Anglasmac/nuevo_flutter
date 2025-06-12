@@ -54,8 +54,7 @@ flutter:
   # Descomenta y define la carpeta donde están tus imágenes
   assets:
     # Asegúrate que la ruta sea correcta desde la raíz de tu proyecto
-    - assets/images/
-    - assets/images/
+    - lib/assets/images/
 
   # === FIN SECCIÓN DE ASSETS ===
 
