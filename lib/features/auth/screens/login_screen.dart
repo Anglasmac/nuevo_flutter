@@ -121,7 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 Hero(
                   tag: 'app-logo',
-                  child: Image.asset('IconoFIP.png', height: 180),
+                  child: Image.asset('lib/assets/images/fipModificado.png', height: 180),
                 ),
                 const SizedBox(height: 24.0),
                 Text(
