@@ -121,4 +121,42 @@ static const String _baseUrl = 'http://localhost:3000';
     }
   }
 
+  // Agregar este método a tu ApiService:
+
+// Reemplaza el método fetchServiceIdsForReservation con esta versión corregida:
+
+// REEMPLAZA el método fetchServiceIdsForReservation con este:
+// (Elimina el método anterior y usa este)
+
+Future<List<int>> fetchServiceIdsForReservation(int reservationId) async {
+  try {
+    print("📞 Obteniendo servicios para reserva $reservationId desde reserva individual");
+    
+    // Obtener la reserva individual con servicios incluidos
+    final response = await http.get(
+      Uri.parse('$_baseUrl/reservations/$reservationId'), // ✅ Endpoint que SÍ existe
+      headers: _commonHeaders,
+    );
+    
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> reservaData = json.decode(response.body);
+      print("🔍 Datos de reserva individual: $reservaData");
+      
+      // Verificar si tiene servicios adicionales
+      if (reservaData.containsKey('AditionalServices')) {
+        final List<dynamic> services = reservaData['AditionalServices'];
+        final serviceIds = services.map((service) => service['idAditionalServices'] as int).toList();
+        print("✅ IDs de servicios obtenidos: $serviceIds");
+        return serviceIds;
+      }
+    }
+    
+    print("⚠️ No se encontraron servicios para la reserva $reservationId");
+    return [];
+  } catch (e) {
+    print("❌ Error obteniendo servicios: $e");
+    return [];
+  }
+}
+
 }

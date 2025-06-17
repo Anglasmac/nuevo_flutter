@@ -1,8 +1,11 @@
+// lib/features/reservas/screens/reservas_calendar_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/screens/create_reservation_screen.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/widgets/reservation_card.dart';
-import 'package:nuevo_proyecto_flutter/services/api_service.dart'; // Asegúrate que la ruta a tu servicio API es correcta
+import 'package:nuevo_proyecto_flutter/features/clientes/models/cliente_model.dart';
+import 'package:nuevo_proyecto_flutter/services/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 
@@ -18,9 +21,10 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
-  final ApiService _apiService = ApiService(); 
+  final ApiService _apiService = ApiService();
   Map<DateTime, List<Reserva>> _eventsFromApi = {};
   List<Reserva> _selectedDayReservas = [];
+  List<Cliente> _clientes = []; // ✅ NUEVO: Lista de clientes
   bool _isLoadingEvents = true;
   String? _loadingError;
 
@@ -35,11 +39,18 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
     setState(() {
       _isLoadingEvents = true;
       _loadingError = null;
-      _eventsFromApi = {};
     });
 
     try {
-      final List<Reserva> allReservations = await _apiService.fetchReservations();
+      // ✅ NUEVO: Cargar clientes junto con reservas
+      final futures = await Future.wait([
+        _apiService.fetchReservations(),
+        _apiService.fetchClientes(),
+      ]);
+      
+      final List<Reserva> allReservations = futures[0] as List<Reserva>;
+      _clientes = futures[1] as List<Cliente>;
+      
       final Map<DateTime, List<Reserva>> groupedEvents = {};
 
       for (final reserva in allReservations) {
@@ -57,19 +68,14 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
         if (_selectedDay != null) {
           _updateSelectedDayReservas(_selectedDay!);
         }
+        _isLoadingEvents = false;
       });
     } catch (e) {
-      print("Error al cargar reservaciones en pantalla: $e");
       if (!mounted) return;
       setState(() {
         _loadingError = "Error al cargar: ${e.toString()}";
+        _isLoadingEvents = false;
       });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoadingEvents = false;
-        });
-      }
     }
   }
 
@@ -90,7 +96,6 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
       setState(() {
         _selectedDay = selectedDay;
         _focusedDay = focusedDay;
-        _calendarFormat = CalendarFormat.week; 
       });
       _updateSelectedDayReservas(selectedDay);
     }
@@ -112,12 +117,10 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (context) {
-          return CreateReservationScreen(
-            selectedDate: reserva?.dateTime ?? _selectedDay ?? DateTime.now(),
-            existingReserva: reserva,
-          ); 
-        },
+        builder: (context) => CreateReservationScreen(
+          selectedDate: reserva?.dateTime ?? _selectedDay,
+          existingReserva: reserva,
+        ),
       ),
     );
 
@@ -127,19 +130,20 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
   }
 
   Future<void> _deleteReservationAndRefresh(int reservationId) async {
-    bool? confirmDelete = await showDialog<bool>(
+    final confirmDelete = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Confirmar Eliminación'),
-          content: const Text('¿Estás seguro de que quieres eliminar esta reservación?'),
+          content: const Text('¿Estás seguro de que quieres eliminar esta reserva? Esta acción no se puede deshacer.'),
           actions: <Widget>[
             TextButton(
               child: const Text('Cancelar'),
               onPressed: () => Navigator.of(context).pop(false),
             ),
             TextButton(
-              child: Text('Eliminar', style: TextStyle(color: Colors.red)),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Eliminar'),
               onPressed: () => Navigator.of(context).pop(true),
             ),
           ],
@@ -149,35 +153,40 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
 
     if (confirmDelete == true) {
       try {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Eliminando...')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Eliminando...')));
         await _apiService.deleteReservation(reservationId.toString());
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Eliminada con éxito.')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reserva eliminada con éxito.')));
         _fetchAndProcessReservations();
       } catch (e) {
-        print("Error al eliminar reservación en pantalla: $e");
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al eliminar reservación: ${e.toString()}')),
+          SnackBar(content: Text('Error al eliminar: ${e.toString()}')),
         );
       }
     }
   }
 
+  // ✅ NUEVO: Función para encontrar cliente por ID
+  Cliente? _findClienteById(int clienteId) {
+    try {
+      return _clientes.firstWhere((c) => c.id == clienteId);
+    } catch (e) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario de Reservas'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Recargar Reservas',
+            tooltip: 'Recargar',
             onPressed: _fetchAndProcessReservations,
           ),
           IconButton(
-            icon: const Icon(Icons.today_outlined),
+            icon: const Icon(Icons.today),
             tooltip: 'Ir a Hoy',
             onPressed: () {
               setState(() {
@@ -189,12 +198,10 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
           ),
         ],
       ),
-      // ✅ CORRECCIÓN ESTRUCTURAL PRINCIPAL
       body: Column(
         children: [
-          // Este widget (TableCalendar) tiene una altura intrínseca, no causa problemas.
           TableCalendar<Reserva>(
-            locale: Localizations.localeOf(context).toString(),
+            locale: 'es_ES',
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
@@ -206,44 +213,27 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
             onPageChanged: _onPageChanged,
             onFormatChanged: _onFormatChanged,
             calendarStyle: CalendarStyle(
-              outsideDaysVisible: false,
               todayDecoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
-              todayTextStyle: TextStyle(color: theme.colorScheme.onPrimary.withOpacity(0.9)),
               selectedDecoration: BoxDecoration(
-                color: theme.colorScheme.primary,
+                color: Theme.of(context).colorScheme.primary,
                 shape: BoxShape.circle,
               ),
-              selectedTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
               markerDecoration: BoxDecoration(
-                color: theme.colorScheme.secondary,
+                color: Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.circle,
               ),
-              weekendTextStyle: TextStyle(color: Colors.redAccent[100]),
             ),
-            headerStyle: HeaderStyle(
+            headerStyle: const HeaderStyle(
               titleCentered: true,
-              formatButtonVisible: true,
               formatButtonShowsNext: false,
-              formatButtonDecoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.primary),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              formatButtonTextStyle: TextStyle(color: theme.colorScheme.primary),
-              titleTextStyle: textTheme.titleMedium!,
-            ),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekendStyle: TextStyle(color: Colors.redAccent[100]),
             ),
           ),
           const Divider(height: 1),
-
-          // Usamos Expanded para que el contenido de abajo ocupe el resto del espacio vertical.
-          // Esto le da un tamaño definido al ListView interno y soluciona el error.
           Expanded(
-            child: _buildConditionalContent(textTheme),
+            child: _buildEventList(),
           ),
         ],
       ),
@@ -256,95 +246,45 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
     );
   }
 
-  /// Este método helper contiene la lógica que estaba dentro del `...[]` en tu código original.
-  /// Ahora está separado para mayor claridad y reutilización.
-  Widget _buildConditionalContent(TextTheme textTheme) {
+  Widget _buildEventList() {
     if (_isLoadingEvents) {
       return const Center(child: CircularProgressIndicator());
     }
-    
     if (_loadingError != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Text(_loadingError!, style: TextStyle(color: Colors.red, fontSize: 16)),
+          child: Text(_loadingError!, style: const TextStyle(color: Colors.red)),
         )
       );
     }
-    
-    // Este Column interno es seguro porque su padre, Expanded, le da un tamaño finito.
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _selectedDay != null
-                    ? 'Reservas para ${DateFormat.yMMMd(Localizations.localeOf(context).toString()).format(_selectedDay!)}'
-                    : 'Seleccione un día',
-                style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              if (_selectedDayReservas.isNotEmpty)
-                Text('${_selectedDayReservas.length} evento(s)', style: textTheme.bodySmall)
-            ],
-          ),
+    if (_selectedDayReservas.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay reservas para este día.',
+          style: TextStyle(color: Colors.grey),
         ),
-        // Usamos otro Expanded para que el ListView ocupe el espacio restante dentro de este Column.
-        Expanded(
-          child: _selectedDayReservas.isEmpty
-              ? Center(
-                  child: Text(
-                    'No hay reservas para este día.',
-                    style: textTheme.bodyLarge?.copyWith(color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 80), // Para el FAB
-                  itemCount: _selectedDayReservas.length,
-                  itemBuilder: (context, index) {
-                    final reserva = _selectedDayReservas[index];
-                    return Dismissible(
-                      key: Key(reserva.idReservations.toString()),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red.shade700,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                        child: const Icon(Icons.delete_forever, color: Colors.white),
-                      ),
-                      confirmDismiss: (direction) async {
-                        return await showDialog<bool>(
-                          context: context,
-                          builder: (BuildContext context) {
-                            return AlertDialog(
-                              title: const Text('Confirmar'),
-                              content: const Text('¿Estás seguro de que quieres eliminar esta reserva?'),
-                              actions: <Widget>[
-                                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-                                TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Eliminar', style: TextStyle(color: Colors.red))),
-                              ],
-                            );
-                          },
-                        ) ?? false;
-                      },
-                      onDismissed: (direction) {
-                        if (reserva.idReservations != null) {
-                          _deleteReservationAndRefresh(reserva.idReservations!);
-                        }
-                      },
-                      child: ReservationCard(
-                        reserva: reserva,
-                        onTap: () {
-                          _navigateToFormAndRefresh(reserva: reserva);
-                        },
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80.0),
+      itemCount: _selectedDayReservas.length,
+      itemBuilder: (context, index) {
+        final reserva = _selectedDayReservas[index];
+        // ✅ CORRECCIÓN: Pasar cliente encontrado a la tarjeta
+        final cliente = _findClienteById(reserva.idCustomers);
+        
+        return ReservationCard(
+          reserva: reserva,
+          cliente: cliente, // ✅ NUEVO: Pasar cliente
+          onTap: () => _navigateToFormAndRefresh(reserva: reserva),
+          onDelete: () {
+             if (reserva.idReservations != null) {
+                _deleteReservationAndRefresh(reserva.idReservations!);
+             }
+          },
+        );
+      },
     );
   }
 }

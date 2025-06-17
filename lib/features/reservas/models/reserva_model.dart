@@ -1,172 +1,208 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 
-// --- FUNCIONES HELPER ---
 List<Reserva> reservaFromJson(String str) => List<Reserva>.from(json.decode(str).map((x) => Reserva.fromJson(x)));
-String reservaToJson(Reserva data) => json.encode(data.toJson());
+String reservaToJson(List<Reserva> data) => json.encode(List<dynamic>.from(data.map((x) => x.toJson())));
 
-/// ✅ NUEVA CLASE PARA REPRESENTAR UN ABONO O PAGO PARCIAL.
 class Abono {
   final DateTime fecha;
   final double monto;
 
   Abono({required this.fecha, required this.monto});
 
-  // Convierte un JSON de la API a un objeto Abono.
-  factory Abono.fromJson(Map<String, dynamic> json) => Abono(
-    fecha: DateTime.parse(json["fecha"]),
-    monto: (json["monto"] as num).toDouble(),
-  );
+  factory Abono.fromJson(Map<String, dynamic> json) {
+    final montoValue = json["cantidad"] ?? json["monto"] ?? 0;
+    
+    return Abono(
+      fecha: DateTime.parse(json["fecha"]),
+      monto: (montoValue as num).toDouble(),
+    );
+  }
 
-  // Convierte el objeto Abono a un JSON para enviar a la API.
   Map<String, dynamic> toJson() => {
-    "fecha": fecha.toIso8601String(),
+    "fecha": fecha.toIso8601String().split('T')[0],
     "cantidad": monto,
   };
 }
 
-
-/// ✅ MODELO DE DATOS DEFINITIVO PARA UNA RESERVA
-///
-/// Esta clase combina la estructura completa de la API, incluyendo los abonos,
-/// con la lógica de UI y compatibilidad que ya tenías implementada.
 class Reserva {
-  // --- PROPIEDADES ALINEADAS CON LA API (CAMPOS REQUERIDOS) ---
-  final int? idReservations; // Nullable para la creación
+  final int? idReservations;
   final DateTime dateTime;
   final int numberPeople;
-  final String matter;
+  final String matter; 
   final String timeDurationR;
-  final List<dynamic> pass; // Representa los servicios adicionales seleccionados
   final double decorationAmount;
   final double remaining;
   final String evenType;
   final double totalPay;
   final String status;
   final int idCustomers;
-  
-  // ✅ NUEVA PROPIEDAD: Lista de abonos
   final List<Abono> abonos;
-
-  // --- PROPIEDADES ADICIONALES/OPCIONALES DE TU MODELO ORIGINAL ---
-  final String? location;
+  final List<int> idAditionalServices;
   final String? notes;
-
-  // --- PROPIEDAD SOLO PARA LA UI ---
   final Color color;
-  
-  // --- GETTERS DE COMPATIBILIDAD (PARA QUE EL CÓDIGO ANTIGUO NO SE ROMPA) ---
-  DateTime get eventDateTime => dateTime;
-  String get eventName => matter;
 
-  // --- CONSTRUCTOR ---
+  // Getters para compatibilidad
+  DateTime get eventDateTime => dateTime;
+  String get eventName => evenType.isNotEmpty ? evenType : 'Reserva';
+  String get location => 'No especificada'; 
+
   Reserva({
-    // Campos de la API
     this.idReservations,
     required this.dateTime,
     required this.numberPeople,
     required this.matter,
     required this.timeDurationR,
-    required this.pass,
     required this.decorationAmount,
     required this.remaining,
     required this.evenType,
     required this.totalPay,
     required this.status,
     required this.idCustomers,
-    // ✅ NUEVO PARÁMETRO CON VALOR POR DEFECTO
-    this.abonos = const [], 
-    // Campos de UI
-    this.location,
+    this.abonos = const [],
+    this.idAditionalServices = const [],
     this.notes,
     this.color = Colors.blue,
   });
 
-
-  // --- MÉTODO `fromJson` (De JSON de la API a Objeto Dart) ---
-  // En tu archivo lib/features/reservas/models/reserva_model.dart
-
 factory Reserva.fromJson(Map<String, dynamic> json) {
-  // ✅ LÓGICA DE PARSEO ROBUSTA PARA ABONOS
-  List<Abono> parsedAbonos = [];
-  final abonosData = json['abonos'] ?? json['pass']; // Busca en 'abonos' o 'pass'
-
-  if (abonosData != null) {
-    // Si los datos son un String, lo decodificamos primero
-    if (abonosData is String) {
-      try {
-        final List<dynamic> decodedList = jsonDecode(abonosData);
-        parsedAbonos = decodedList.map((item) => Abono.fromJson(item)).toList();
-      } catch (e) {
-        print("Error decodificando el string de abonos: $e");
-      }
-    } 
-    // Si ya es una lista (el formato correcto), la procesamos directamente
-    else if (abonosData is List) {
-      parsedAbonos = abonosData.map((item) => Abono.fromJson(item)).toList();
-    }
-  }
-
-  return Reserva(
-    idReservations: json["idReservations"],
-    dateTime: DateTime.parse(json["dateTime"]),
-    numberPeople: json["numberPeople"],
-    matter: json["matter"],
-    timeDurationR: json["timeDurationR"],
-    pass: json["pass"] != null && json["pass"] is List ? List<dynamic>.from(json["pass"].map((x) => x)) : [],
-    decorationAmount: (json["decorationAmount"] as num).toDouble(),
-    remaining: (json["remaining"] as num).toDouble(),
-    evenType: json["evenType"],
-    totalPay: (json["totalPay"] as num).toDouble(),
-    status: json["status"],
-    idCustomers: json["idCustomers"],
-    // Usamos la lista de abonos que hemos parseado de forma segura
-    abonos: parsedAbonos, 
-    location: json['location'],
-    notes: json['notes'],
-    color: _getColorFromJson(json), 
-  );
-}
-  /// Método helper privado para determinar el color (tu lógica original).
-  static Color _getColorFromJson(Map<String, dynamic> json) {
-    final idString = json['idReservations']?.toString();
-    if (idString != null) {
-      final List<Color> defaultColors = [
-        Colors.blue.shade300,
-        Colors.red.shade300,
-        Colors.green.shade300,
-        Colors.orange.shade300,
-        Colors.purple.shade300,
-        Colors.teal.shade300,
-      ];
-      return defaultColors[idString.hashCode % defaultColors.length];
-    }
-    return Colors.blueGrey;
-  }
-
+  // ✅ DEBUGGING: Ver TODO lo que llega desde tu API
+  print("🔍 ===== RESERVA JSON COMPLETO =====");
+  print(json);
+  print("🔍 ===== CAMPOS DISPONIBLES =====");
+  json.forEach((key, value) {
+    print("$key: $value (${value.runtimeType})");
+  });
+  print("🔍 ================================");
   
- // ✅ MÉTODO toJson() DEFINITIVO PARA TU BACKEND
-Map<String, dynamic> toJson() {
-  return {
-    // Campos que ya estaban bien
-    "dateTime": dateTime.toIso8601String(),
-    "numberPeople": numberPeople,
-    "matter": matter,
-    "timeDurationR": timeDurationR,
-    "decorationAmount": decorationAmount,
-    "remaining": remaining,
-    "evenType": evenType,
-    "totalPay": totalPay,
-    "status": status,
-    "idCustomers": idCustomers,
-    if (notes != null) "notes": notes,
-    // La propiedad 'location' no la estamos usando en el form, la puedes omitir o dejar
-    if (location != null) "location": location,
+  List<Abono> parsedAbonos = [];
+  final abonosData = json['pass'] ?? json['abonos'];
+  if (abonosData is List) {
+    parsedAbonos = abonosData
+        .where((item) => item is Map<String, dynamic>)
+        .map((item) => Abono.fromJson(item))
+        .toList();
+  }
 
-    // ✅ CORRECCIÓN FINAL:
-    // Enviamos la lista de objetos de abono bajo la clave 'pass',
-    // que es lo que el backend está esperando validar.
-    "pass": abonos.map((abono) => abono.toJson()).toList(),
-  };
+  // ✅ BUSCAR SERVICIOS EN TODOS LOS FORMATOS POSIBLES
+  List<int> servicesIds = [];
+  
+  // Revisar TODOS los campos posibles donde pueden venir los servicios
+  final possibleServiceFields = [
+    'AditionalServices',
+    'aditionalServices', 
+    'additionalServices',
+    'additional_services',
+    'services',
+    'Services',
+    'idAditionalServices',
+    'servicios',
+    'Servicios'
+  ];
+  
+  for (String field in possibleServiceFields) {
+    if (json[field] != null) {
+      print("🔍 Campo '$field' encontrado: ${json[field]}");
+      
+      if (json[field] is List) {
+        final services = json[field] as List;
+        print("🔍 Es una lista con ${services.length} elementos");
+        
+        for (var service in services) {
+          print("🔍 Elemento del servicio: $service (${service.runtimeType})");
+          
+          if (service is Map<String, dynamic>) {
+            // Es un objeto completo del servicio
+            final id = service['idAditionalServices'] ?? 
+                      service['id'] ?? 
+                      service['ID'] ?? 
+                      service['Id'] ?? 0;
+            if (id is int && id > 0) {
+              servicesIds.add(id);
+              print("✅ ID de servicio agregado: $id");
+            }
+          } else if (service is int) {
+            // Es solo el ID
+            servicesIds.add(service);
+            print("✅ ID directo agregado: $service");
+          }
+        }
+        break; // Salir del loop si encontramos servicios
+      }
+    }
+  }
+  
+  print("🔍 IDs de servicios finales: $servicesIds");
+
+  // Manejo de fecha/hora
+  DateTime parsedDateTime;
+  try {
+    final dateTimeStr = json["dateTime"];
+    if (dateTimeStr is String) {
+      parsedDateTime = DateTime.parse(dateTimeStr.split('.')[0]);
+    } else {
+      parsedDateTime = DateTime.now();
+    }
+  } catch (e) {
+    print("❌ Error parsing dateTime: $e");
+    parsedDateTime = DateTime.now();
+  }
+
+  final reserva = Reserva(
+    idReservations: json["idReservations"],
+    dateTime: parsedDateTime,
+    numberPeople: json["numberPeople"] ?? 0,
+    matter: json["matter"] ?? '',
+    timeDurationR: json["timeDurationR"]?.toString() ?? '0',
+    decorationAmount: (json["decorationAmount"] as num?)?.toDouble() ?? 0.0,
+    remaining: (json["remaining"] as num?)?.toDouble() ?? 0.0,
+    evenType: json["evenType"] ?? 'Otro',
+    totalPay: (json["totalPay"] as num?)?.toDouble() ?? 0.0,
+    status: json["status"] ?? 'pendiente',
+    idCustomers: json["idCustomers"],
+    abonos: parsedAbonos,
+    idAditionalServices: servicesIds,
+    notes: json['notes'],
+    color: _mapStatusToColor(json["status"]),
+  );
+  
+  print("✅ Reserva creada con ${servicesIds.length} servicios");
+  return reserva;
 }
+
+  Map<String, dynamic> toJson() {
+    // ✅ CORRECCIÓN: Enviar fecha/hora preservando la zona horaria local
+    return {
+      "idCustomers": idCustomers,
+      "dateTime": dateTime.toIso8601String(),
+      "numberPeople": numberPeople,
+      "matter": matter,
+      "timeDurationR": timeDurationR,
+      "decorationAmount": decorationAmount,
+      "remaining": remaining,
+      "evenType": evenType,
+      "totalPay": totalPay,
+      "status": status,
+      if (notes != null) "notes": notes,
+      "pass": abonos.map((abono) => abono.toJson()).toList(),
+      "idAditionalServices": idAditionalServices,
+    };
+  }
+
+  static Color _mapStatusToColor(String? status) {
+    switch (status) {
+      case 'terminada':
+        return const Color(0xBB4CAF50);
+      case 'anulada':
+        return const Color(0xBBF44336);
+      case 'pendiente':
+        return const Color(0xBBFF9800);
+      case 'en_proceso':
+        return const Color(0xBBFFEB3B);
+      case 'confirmada':
+        return const Color(0xBB2196F3);
+      default:
+        return Colors.grey.shade400;
+    }
+  }
 }

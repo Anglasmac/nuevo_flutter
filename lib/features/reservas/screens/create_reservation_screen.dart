@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/widgets/reservation_form.dart';
-import 'package:nuevo_proyecto_flutter/services/api_service.dart'; // Asegúrate de que este servicio y sus métodos existan.
+import 'package:nuevo_proyecto_flutter/services/api_service.dart';
 
 class CreateReservationScreen extends StatefulWidget {
   final DateTime? selectedDate;
@@ -23,41 +22,37 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
   final ApiService _apiService = ApiService();
   bool _isSaving = false;
 
-  /// Maneja la lógica para guardar o actualizar una reserva.
   Future<void> _handleSaveReservation(Reserva formData) async {
-    if (_isSaving) return; 
+    if (_isSaving) return;
 
     setState(() {
       _isSaving = true;
     });
 
     try {
-      if (widget.existingReserva != null) {
-        // --- LÓGICA DE ACTUALIZACIÓN (PUT) ---
+      final isEditing = widget.existingReserva != null;
+      if (isEditing) {
         await _apiService.updateReservation(formData.idReservations!, formData);
-        
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reserva "${formData.matter}" actualizada con éxito.')),
-        );
       } else {
-        // --- LÓGICA DE CREACIÓN (POST) ---
         await _apiService.createReservation(formData);
-
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Reserva "${formData.matter}" creada con éxito.')),
-        );
       }
 
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Reserva ${isEditing ? "actualizada" : "creada"} con éxito.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
       
+      // ✅ MANEJO DE ERRORES MEJORADO
       String errorMessage = "Ocurrió un error inesperado.";
       final errorString = e.toString();
+      
+      // Intenta parsear errores específicos del backend
       if (errorString.contains("errors")) {
         try {
           final jsonErrorString = errorString.substring(errorString.indexOf('{'));
@@ -67,7 +62,15 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
             errorMessage = errors[0]['msg'];
           }
         } catch (jsonError) {
-          print("No se pudo parsear el JSON de error: $jsonError");
+          print("No se pudo parsear el JSON de error (errors): $jsonError");
+        }
+      } else if (errorString.contains("message")) {
+         try {
+          final jsonErrorString = errorString.substring(errorString.indexOf('{'));
+          final decodedError = json.decode(jsonErrorString);
+          errorMessage = decodedError['message'] ?? errorMessage;
+        } catch (jsonError) {
+          print("No se pudo parsear el JSON de error (message): $jsonError");
         }
       }
       
@@ -75,6 +78,7 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
         SnackBar(
           content: Text(errorMessage),
           backgroundColor: Colors.redAccent,
+          duration: const Duration(seconds: 5),
         ),
       );
     } finally {
@@ -84,9 +88,8 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
         });
       }
     }
-  } // ✅ LA FUNCIÓN TERMINA AQUÍ
+  }
 
-  // ✅ EL MÉTODO BUILD COMIENZA AQUÍ, AL MISMO NIVEL
   @override
   Widget build(BuildContext context) {
     final bool isEditing = widget.existingReserva != null;
@@ -102,13 +105,10 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
       ),
       body: Stack(
         children: [
-          SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
-            child: ReservationForm(
-              initialDate: widget.selectedDate,
-              existingReserva: widget.existingReserva,
-              onSave: _handleSaveReservation,
-            ),
+          ReservationForm(
+            initialDate: widget.selectedDate,
+            existingReserva: widget.existingReserva,
+            onSave: _handleSaveReservation,
           ),
           if (_isSaving)
             Container(
@@ -121,4 +121,4 @@ class _CreateReservationScreenState extends State<CreateReservationScreen> {
       ),
     );
   }
-} // ✅ LA CLASE TERMINA AQUÍ
+}
