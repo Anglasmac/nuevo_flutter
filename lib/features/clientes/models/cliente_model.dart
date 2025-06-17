@@ -42,6 +42,7 @@ String get fullName {
   if (last.isEmpty) return first;
   
   return '$first $last';
+  
 }
 
   Cliente({
