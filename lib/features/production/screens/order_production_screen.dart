@@ -1,9 +1,10 @@
+// lib/features/production/screens/order_production_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:nuevo_proyecto_flutter/features/production/models/production_order_model.dart';
 import 'package:nuevo_proyecto_flutter/features/production/screens/production_order_detail_screen.dart';
 import 'package:nuevo_proyecto_flutter/services/production_order_service.dart';
-import 'package:smooth_page_indicator/smooth_page_indicator.dart';
 
 class OrderProductionScreen extends StatefulWidget {
   const OrderProductionScreen({super.key});
@@ -16,77 +17,51 @@ class _OrderProductionScreenState extends State<OrderProductionScreen> {
   final ProductionOrderService _productionService = ProductionOrderService();
   late Future<List<ProductionOrder>> _ordersFuture;
 
-  final PageController _pageController = PageController();
-  final ValueNotifier<int> _currentPageNotifier = ValueNotifier(0);
-  final ValueNotifier<bool> _isUpdatingNotifier = ValueNotifier(false);
-
   @override
   void initState() {
     super.initState();
     _loadOrders();
-    _pageController.addListener(() {
-      final newPage = _pageController.page?.round() ?? 0;
-      if (_currentPageNotifier.value != newPage) {
-        _currentPageNotifier.value = newPage;
-      }
-    });
   }
 
   void _loadOrders() {
-    setState(() {
-      _ordersFuture = _productionService.fetchProductionOrders(statuses: ['IN_PROGRESS', 'PENDING']);
-    });
+    if (mounted) {
+      setState(() {
+        _ordersFuture = _productionService.fetchProductionOrders(
+            statuses: ['PENDING', 'IN_PROGRESS', 'PAUSED']);
+      });
+    }
   }
 
-  Future<void> _markOrderAsCompleted(ProductionOrder order) async {
-    _isUpdatingNotifier.value = true;
-    try {
-      await _productionService.updateOrderStatus(order.idProductionOrder, 'COMPLETED');
-      
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Orden #${order.idProductionOrder} completada.'),
-          backgroundColor: Colors.green,
+  void _navigateToDetail(ProductionOrder order) async {
+    // --- ÚNICO CAMBIO EN ESTE ARCHIVO ---
+    // Ahora pasamos el flag `isKitchenStaff` al detalle.
+    // Deberás reemplazar `true` con tu lógica real para verificar el rol del usuario.
+    // Por ejemplo: `isKitchenStaff: authService.currentUser.role == 'kitchen'`
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductionOrderDetailScreen(
+          orderId: order.idProductionOrder,
+          isKitchenStaff: true, // <-- TODO: Reemplaza esto con tu lógica de roles
         ),
-      );
+      ),
+    );
+    
+    // Si la pantalla de detalle devuelve 'true', significa que hubo un cambio y refrescamos.
+    if (result == true && mounted) {
       _loadOrders();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error al completar la orden: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        _isUpdatingNotifier.value = false;
-      }
-    }
-  }
-  
-  (String, Color) _getStatusInfo(String? status) {
-    switch (status) {
-      case 'IN_PROGRESS': return ('En Proceso', Colors.orange);
-      case 'PENDING': return ('Pendiente', Colors.blue);
-      default: return ('Desconocido', Colors.grey);
     }
   }
 
-  @override
-  void dispose() {
-    _pageController.dispose();
-    _currentPageNotifier.dispose();
-    _isUpdatingNotifier.dispose();
-    super.dispose();
-  }
-
+  // ... (el resto del archivo no cambia)
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Órdenes de Producción'),
+        elevation: 1,
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        surfaceTintColor: Colors.transparent,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -95,217 +70,184 @@ class _OrderProductionScreenState extends State<OrderProductionScreen> {
           ),
         ],
       ),
-      body: FutureBuilder<List<ProductionOrder>>(
-        future: _ordersFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            // ===== CORRECCIÓN 1: Pasamos 'context' al widget de error =====
-            return _buildErrorWidget(context, snapshot.error);
-          }
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            // ===== CORRECCIÓN 1: Pasamos 'context' al widget de estado vacío =====
-            return _buildEmptyStateWidget(context);
-          }
+      body: RefreshIndicator(
+        onRefresh: () async => _loadOrders(),
+        child: FutureBuilder<List<ProductionOrder>>(
+          future: _ordersFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snapshot.hasError) {
+              return _buildErrorWidget(snapshot.error);
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return _buildEmptyStateWidget();
+            }
 
-          final orders = snapshot.data!;
-
-          if (_pageController.positions.isNotEmpty && _pageController.page!.round() >= orders.length) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && _pageController.positions.isNotEmpty) {
-                _pageController.jumpToPage(0);
-              }
-            });
-          }
-
-          return ValueListenableBuilder<int>(
-            valueListenable: _currentPageNotifier,
-            builder: (context, currentPage, child) {
-              if (currentPage >= orders.length) {
-                return _buildEmptyStateWidget(context);
-              }
-              final currentOrder = orders[currentPage];
-              final (statusText, statusColor) = _getStatusInfo(currentOrder.status);
-
-              return Column(
-                children: [
-                  _buildHeader(context, currentOrder, statusText, statusColor),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
-                  Expanded(
-                    child: PageView.builder(
-                      controller: _pageController,
-                      itemCount: orders.length,
-                      itemBuilder: (context, index) {
-                        return _buildOrderPageContent(context, orders[index]);
-                      },
-                    ),
-                  ),
-                  if (orders.length > 1)
-                    _buildPageIndicator(context, orders.length),
-                  _buildCompleteButton(context, currentOrder),
-                ],
-              );
-            },
-          );
-        },
+            final orders = snapshot.data!;
+            return ListView.builder(
+              padding: const EdgeInsets.all(16.0),
+              itemCount: orders.length,
+              itemBuilder: (context, index) {
+                return _buildOrderCard(context, orders[index]);
+              },
+            );
+          },
+        ),
       ),
     );
   }
 
-   Widget _buildHeader(BuildContext context, ProductionOrder order, String statusText, Color statusColor) {
+  Widget _buildOrderCard(BuildContext context, ProductionOrder order) {
     final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 15.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
+    final (statusText, statusColor, statusIcon) = _getStatusInfo(order.status);
+    
+    final double progress = (order.inputInitialWeight != null && order.inputInitialWeight! > 0 && order.finishedProductWeight != null)
+        ? (order.finishedProductWeight! / order.inputInitialWeight!)
+        : 0.0;
+        
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16.0),
+      elevation: 3,
+      shadowColor: Colors.black.withOpacity(0.1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _navigateToDetail(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Creada:', style: theme.textTheme.labelMedium?.copyWith(color: Colors.grey)),
-              Text(
-                order.createdAt != null ? DateFormat('dd/MM HH:mm').format(order.createdAt!) : 'N/A',
-                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.productNameSnapshot ?? 'Producto Desconocido',
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Orden #${order.idProductionOrder}',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Chip(
+                    avatar: Icon(statusIcon, color: Colors.white, size: 16),
+                    label: Text(statusText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    backgroundColor: statusColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  )
+                ],
               ),
-            ],
-          ),
-          Chip(
-            label: Text(statusText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            backgroundColor: statusColor,
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-          ),
-        ],
-      ),
-    );
-  }
+              const SizedBox(height: 16),
+              if (order.status == 'IN_PROGRESS')
+                Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: progress.clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: statusColor.withOpacity(0.2),
+                      valueColor: AlwaysStoppedAnimation<Color>(statusColor),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '${(progress * 100).toStringAsFixed(0)}%',
+                        style: theme.textTheme.labelSmall?.copyWith(color: statusColor, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
 
-  Widget _buildOrderPageContent(BuildContext context, ProductionOrder order) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-      child: Card(
-        elevation: 4.0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (context) => ProductionOrderDetailScreen(order: order)));
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  order.productNameSnapshot ?? 'Producto sin nombre',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  // ===== CORRECCIÓN 2: Usamos 'initialAmount' en lugar de 'quantityToProduce' =====
-                  'Cantidad: ${order.initialAmount ?? 0} unidades',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: Colors.grey[700]),
-                ),
-                const Spacer(),
-                _buildOrderInfoCard(context, order.employeeFullName),
-                const SizedBox(height: 8),
-              ],
-            ),
+              const Divider(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildStatItem(context, Icons.scale_outlined, 'Plan', '${order.initialAmount ?? 'N/A'} u.'),
+                  _buildStatItem(context, Icons.person_outline, 'Asignado a', order.employeeFullName ?? 'N/A', flex: 2),
+                  const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+                ],
+              )
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildOrderInfoCard(BuildContext context, String? employeeName) {
-    final theme = Theme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceVariant.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(12.0),
-      ),
-      padding: const EdgeInsets.all(16.0),
+  Widget _buildStatItem(BuildContext context, IconData icon, String label, String value, {int flex = 1}) {
+    return Expanded(
+      flex: flex,
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const CircleAvatar(radius: 24.0, child: Icon(Icons.person_outline, size: 28)),
-          const SizedBox(width: 16.0),
-          Expanded(
+          Icon(icon, size: 18, color: Colors.grey[700]),
+          const SizedBox(width: 8),
+          Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Asignado a:', style: theme.textTheme.labelMedium?.copyWith(color: Colors.grey[700])),
+                Text(label, style: Theme.of(context).textTheme.labelSmall?.copyWith(color: Colors.grey[600])),
                 Text(
-                  employeeName ?? 'No asignado',
-                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
-                  maxLines: 1,
+                  value, 
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
-          Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey[600]),
         ],
       ),
     );
   }
 
-  Widget _buildPageIndicator(BuildContext context, int count) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16.0),
-      child: SmoothPageIndicator(
-        controller: _pageController,
-        count: count,
-        effect: ExpandingDotsEffect(
-          dotWidth: 8.0,
-          dotHeight: 8.0,
-          activeDotColor: Theme.of(context).colorScheme.primary,
-        ),
-      ),
-    );
+  (String, Color, IconData) _getStatusInfo(String? status) {
+    switch (status) {
+      case 'IN_PROGRESS': return ('En Proceso', Colors.orange, Icons.sync);
+      case 'PAUSED': return ('En Pausa', Colors.blueGrey, Icons.pause_circle_outline);
+      case 'PENDING': return ('Pendiente', Colors.blue.shade700, Icons.pending_actions_outlined);
+      case 'COMPLETED': return ('Completada', Colors.green.shade700, Icons.check_circle_outline);
+      case 'CANCELLED': return ('Cancelada', Colors.red.shade700, Icons.cancel_outlined);
+      default: return ('Desconocido', Colors.grey, Icons.help_outline);
+    }
   }
 
-  Widget _buildCompleteButton(BuildContext context, ProductionOrder order) {
-    final canComplete = order.status == 'IN_PROGRESS';
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24.0, 8.0, 24.0, 32.0),
-      child: ValueListenableBuilder<bool>(
-        valueListenable: _isUpdatingNotifier,
-        builder: (context, isUpdating, child) {
-          return ElevatedButton.icon(
-            icon: isUpdating
-                ? Container(width: 24, height: 24, padding: const EdgeInsets.all(4), child: const CircularProgressIndicator(strokeWidth: 3, color: Colors.white))
-                : const Icon(Icons.check_circle_outline),
-            label: Text(isUpdating ? 'Completando...' : 'Marcar como Completada'),
-            onPressed: (canComplete && !isUpdating) ? () => _markOrderAsCompleted(order) : null,
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              disabledBackgroundColor: Colors.grey.shade300,
+  Widget _buildEmptyStateWidget() {
+    return LayoutBuilder(builder: (context, constraints) {
+      return SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                const Text('No hay órdenes activas', style: TextStyle(fontSize: 18, color: Colors.grey)),
+                Text('Todas las órdenes están al día o no hay pendientes.', style: TextStyle(color: Colors.grey[600])),
+              ],
             ),
-          );
-        },
-      ),
-    );
+          ),
+        ),
+      );
+    });
   }
 
-  // ===== CORRECCIÓN 1: La función ahora recibe 'context' =====
-  Widget _buildEmptyStateWidget(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 80, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          const Text('No hay órdenes activas', style: TextStyle(fontSize: 18, color: Colors.grey)),
-          const SizedBox(height: 8),
-          Text('Todas las órdenes de producción están al día.', style: TextStyle(color: Colors.grey[600])),
-        ],
-      ),
-    );
-  }
-
-  // ===== CORRECCIÓN 1: La función ahora recibe 'context' =====
-  Widget _buildErrorWidget(BuildContext context, Object? error) {
+  Widget _buildErrorWidget(Object? error) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -315,7 +257,6 @@ class _OrderProductionScreenState extends State<OrderProductionScreen> {
             Icon(Icons.cloud_off, size: 80, color: Colors.red[300]),
             const SizedBox(height: 16),
             const Text('Error al cargar órdenes', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
             Text('No se pudieron cargar los datos. Revisa la conexión.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[600])),
             const SizedBox(height: 20),
             ElevatedButton.icon(

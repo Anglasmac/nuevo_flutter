@@ -4,21 +4,25 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-// <-- REFACTORIZACIÓN: Se importa la clase base para unificar la configuración.
-import 'package:nuevo_proyecto_flutter/services/ase_api_service.dart'; 
+import 'package:nuevo_proyecto_flutter/services/ase_api_service.dart';
 
-// Las claves para SharedPreferences no cambian.
+// --- IMPORTANTE: Asegúrate que las rutas a tus modelos sean correctas ---
+import 'package:nuevo_proyecto_flutter/features/auth/models/user_model.dart';
+import 'package:nuevo_proyecto_flutter/features/auth/models/login_response_model.dart';
+
+// Modificamos las claves para incluir el usuario.
 class AuthStorageKeys {
   static const String token = 'token';
   static const String user = 'authUser';
-  static const String permissions = 'effectivePermissions';
+  // Si usas permisos, descomenta la siguiente línea:
+  // static const String permissions = 'effectivePermissions';
 }
 
-// <-- REFACTORIZACIÓN: AuthService ahora extiende BaseApiService.
 class AuthService extends BaseApiService {
 
-  Future<bool> login(String email, String password) async {
-    // <-- REFACTORIZACIÓN: Usa `baseUrl` heredado en lugar de `AppConfig`.
+  /// Realiza el login y, si es exitoso, guarda el token y el usuario.
+  /// Devuelve el objeto [User] para que el AuthProvider lo utilice.
+  Future<User> login(String email, String password) async {
     final Uri url = Uri.parse('$baseUrl/auth/login');
     print('[AuthService] Intentando login en: $url');
 
@@ -32,26 +36,23 @@ class AuthService extends BaseApiService {
       final Map<String, dynamic> data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
-        if (data.containsKey('token') && data.containsKey('user') && data.containsKey('effectivePermissions')) {
-          final String token = data['token'];
-          final Map<String, dynamic> user = data['user'];
-          final Map<String, dynamic> permissions = data['effectivePermissions'];
+        // Usamos tu modelo LoginResponse para parsear la respuesta.
+        final loginResponse = LoginResponse.fromJson(data);
+        
+        final prefs = await SharedPreferences.getInstance();
+        
+        // Guardar el token de autenticación.
+        await prefs.setString(AuthStorageKeys.token, loginResponse.token);
+        
+        // ¡CLAVE! Guardar el objeto de usuario completo como un string JSON.
+        await prefs.setString(AuthStorageKeys.user, jsonEncode(loginResponse.user.toJson()));
 
-          // <-- INTEGRACIÓN CLAVE: Informamos a la clase base del nuevo token.
-          // Ahora todos los demás servicios usarán este token automáticamente.
-          BaseApiService.setAuthToken(token);
+        // Configurar el token en la clase base para futuras peticiones.
+        BaseApiService.setAuthToken(loginResponse.token);
 
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(AuthStorageKeys.token, token);
-          await prefs.setString(AuthStorageKeys.user, jsonEncode(user));
-          await prefs.setString(AuthStorageKeys.permissions, jsonEncode(permissions));
+        print('[AuthService] Login exitoso. Token y usuario guardados.');
+        return loginResponse.user; // Devolvemos el objeto User.
 
-          print('[AuthService] Login exitoso. Token, usuario y permisos guardados.');
-          return true;
-
-        } else {
-          throw Exception('Respuesta inválida del servidor (faltan datos).');
-        }
       } else {
         final errorMessage = data['message'] ?? 'Error de autenticación.';
         throw Exception(errorMessage);
@@ -60,100 +61,64 @@ class AuthService extends BaseApiService {
        throw Exception('No se pudo conectar al servidor. Revisa tu conexión y la URL: $baseUrl');
     } catch (e) {
       print('[AuthService] Excepción en login: $e');
-      await clearClientSession();
+      await clearClientSession(); // Limpia cualquier dato si el login falla.
       rethrow;
     }
   }
 
+  /// Cierra la sesión en el backend (si existe endpoint) y limpia los datos locales.
   Future<void> logout() async {
+    // Opcional: Llamada al endpoint de logout del backend.
     try {
       final token = await getToken();
       if (token != null) {
-        // <-- REFACTORIZACIÓN: Usa `baseUrl` heredado.
         final url = Uri.parse('$baseUrl/auth/logout');
         await http.post(
           url,
-          headers: {
-            'Content-Type': 'application/json; charset=UTF-8',
-            'Authorization': 'Bearer $token',
-          },
+          headers: {'Authorization': 'Bearer $token'},
         );
         print('[AuthService] Petición de logout al backend enviada.');
       }
     } catch (e) {
        print('[AuthService] Error en petición de logout al backend (se ignorará): $e');
     }
+    // Siempre limpia la sesión local, incluso si la llamada al backend falla.
     await clearClientSession();
   }
 
+  /// Limpia todos los datos de sesión guardados en el dispositivo.
   Future<void> clearClientSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AuthStorageKeys.token);
-    await prefs.remove(AuthStorageKeys.user);
-    await prefs.remove(AuthStorageKeys.permissions);
-
-    // <-- INTEGRACIÓN CLAVE: Limpiamos el token en la clase base.
-    BaseApiService.clearAuthToken();
+    await prefs.remove(AuthStorageKeys.user); // <-- ¡Importante! Limpiar también el usuario.
     
-    print('[AuthService] Sesión del cliente (token, user, permissions) limpiada.');
+    BaseApiService.clearAuthToken();
+    print('[AuthService] Sesión del cliente (token, user) limpiada.');
   }
 
+  /// Obtiene el token guardado. Devuelve null si no existe.
   Future<String?> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(AuthStorageKeys.token);
   }
 
-  Future<Map<String, dynamic>?> getUser() async {
+  /// Obtiene el objeto User guardado. Devuelve null si no existe.
+  Future<User?> getSavedUser() async {
     final prefs = await SharedPreferences.getInstance();
     final userString = prefs.getString(AuthStorageKeys.user);
     if (userString != null) {
-      return jsonDecode(userString) as Map<String, dynamic>;
+      try {
+        // Decodifica el string JSON y crea un objeto User.
+        return User.fromJson(jsonDecode(userString));
+      } catch (e) {
+        print('[AuthService] Error al decodificar el usuario guardado: $e');
+        return null;
+      }
     }
     return null;
   }
   
-  Future<Map<String, dynamic>> getPermissions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final permissionsString = prefs.getString(AuthStorageKeys.permissions);
-
-    if (permissionsString != null && permissionsString.isNotEmpty) {
-      try {
-        final decodedData = jsonDecode(permissionsString);
-        if (decodedData is Map<String, dynamic>) {
-          return decodedData;
-        }
-      } catch (e) {
-        print('[AuthService] Error al decodificar los permisos: $e. Se devolverá un mapa vacío.');
-      }
-    }
-    return {};
-  }
-
-  Future<bool> hasPermission(String screen, String privilege) async {
-    final permissions = await getPermissions();
-    
-    if (permissions.isNotEmpty && permissions.containsKey(screen)) {
-      final List<dynamic> privileges = permissions[screen];
-      return privileges.contains(privilege);
-    }
-    return false;
-  }
-
-  Future<String> getRoleName() async {
-    final user = await getUser();
-    if (user != null && user.containsKey('idRole')) {
-      final dynamic roleIdValue = user['idRole'];
-      if (roleIdValue is int) {
-        switch (roleIdValue) {
-          case 1: return 'Administrador';
-          case 2: return 'Empleado';
-          default: return 'Rol ID $roleIdValue (Desconocido)';
-        }
-      }
-    }
-    return 'Sin Rol Definido';
-  }
-
+  /// Comprueba si existe un token válido.
   Future<bool> isAuthenticated() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;

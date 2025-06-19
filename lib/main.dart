@@ -1,22 +1,76 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart'; // 1. Importa el paquete provider
-import 'package:nuevo_proyecto_flutter/app/my_app.dart';
-import 'package:intl/date_symbol_data_local.dart'; 
-import 'package:flutter_localizations/flutter_localizations.dart'; 
-import 'package:nuevo_proyecto_flutter/features/auth/provider/auth_provider.dart'; // 2. Importa tu AuthProvider
+import 'package:provider/provider.dart';
+import 'package:intl/date_symbol_data_local.dart';
+import 'package:nuevo_proyecto_flutter/features/auth/provider/auth_provider.dart';
+import 'package:nuevo_proyecto_flutter/features/auth/screens/login_screen.dart'; // Asegúrate de tener esta pantalla y la ruta correcta
+import 'package:nuevo_proyecto_flutter/features/home/screens/home_screen.dart';   // Tu pantalla principal (con la barra de navegación)
 
-void main() async { // 3. Haz que la función main sea async
-  // 4. Asegúrate de que los widgets estén inicializados antes de cualquier otra cosa.
-  // Es crucial para operaciones async antes de runApp, como el chequeo de sesión.
-  WidgetsFlutterBinding.ensureInitialized(); 
-   await initializeDateFormatting('es_CO', null); 
-  // No necesitas inicializar Firebase aquí a menos que lo uses, pero el patrón es correcto.
+void main() async {
+  // Asegura la inicialización de los bindings de Flutter.
+  WidgetsFlutterBinding.ensureInitialized();
+  // Inicializa el formateo de fechas para español-Colombia.
+  await initializeDateFormatting('es_CO', null);
 
-  // 5. Envuelve tu app con el Provider
+  // Envuelve la aplicación entera con el ChangeNotifierProvider.
+  // Así, AuthProvider estará disponible en todo el árbol de widgets.
   runApp(
     ChangeNotifierProvider(
       create: (context) => AuthProvider(),
       child: const MyApp(),
     ),
   );
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Tu Aplicación',
+      theme: ThemeData(
+        // Aquí puedes definir tu tema global.
+        primarySwatch: Colors.brown,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      // El punto de entrada ahora es AuthWrapper.
+      home: const AuthWrapper(),
+      // Define tus rutas principales para una navegación más limpia.
+      routes: {
+        '/login': (context) => const LoginScreen(),
+        '/home': (context) => const HomeScreen(),
+      },
+    );
+  }
+}
+
+/// Un widget que decide qué pantalla mostrar basado en el estado de autenticación.
+class AuthWrapper extends StatelessWidget {
+  const AuthWrapper({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // Escucha los cambios en AuthProvider.
+    final authProvider = context.watch<AuthProvider>();
+
+    // Mientras el AuthProvider está comprobando el estado inicial, muestra un spinner.
+    if (authProvider.isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    // Si el usuario está autenticado, muéstrale la pantalla principal.
+    if (authProvider.isAuthenticated) {
+      return const HomeScreen();
+    } 
+    // Si no, muéstrale la pantalla de login.
+    else {
+      return const LoginScreen();
+    }
+  }
 }

@@ -2,16 +2,16 @@
 
 import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nuevo_proyecto_flutter/features/auth/services/auth_service.dart'; // Para acceder a AuthStorageKeys
 
 /// Clase base abstracta para todos los servicios de API.
-/// Centraliza la configuración de la URL base, los headers y la gestión de tokens.
+/// Centraliza la configuración de la URL base y la gestión de tokens.
 abstract class BaseApiService {
   // El token de autenticación se gestiona de forma estática y centralizada.
   static String? _authToken;
 
   /// Guarda el token de autenticación para usarlo en futuras peticiones.
-  /// Llama a este método desde tu lógica de login.
-  /// Ejemplo: BaseApiService.setAuthToken(userToken);
   static void setAuthToken(String token) {
     _authToken = token;
   }
@@ -21,39 +21,56 @@ abstract class BaseApiService {
     _authToken = null;
   }
 
-  /// Define la URL base del backend.
-  String get baseUrl {
-    // <-- INICIO DEL CAMBIO -->
-
-    // --- CONFIGURACIÓN DE DESPLIEGUE (COMENTADA) ---
-    // Esta es la URL que se usaba para producción. La dejamos aquí por si necesitas volver a activarla.
-    // return 'https://api-foodnodedesp.onrender.com';
-
-
-    // --- CONFIGURACIÓN LOCAL (ACTIVA) ---
-    // Esta URL se usará mientras desarrollas y pruebas en tu máquina.
-    const String backendHost = "localhost"; // El host de tu backend local
-    const String backendPort = "3000";      // El puerto de tu backend local
-
-    // Lógica para determinar la IP correcta según la plataforma de desarrollo.
-    if (kIsWeb) {
-      // Para web, 'localhost' funciona directamente.
-      return 'http://$backendHost:$backendPort';
+  // --- MÉTODO AÑADIDO (LA SOLUCIÓN PRINCIPAL) ---
+  /// Obtiene el token de autenticación actual.
+  ///
+  /// Primero revisa si el token ya está en memoria (_authToken).
+  /// Si no, intenta cargarlo desde el almacenamiento persistente (SharedPreferences).
+  /// Esto es crucial para que la sesión persista si se cierra la app.
+  static Future<String?> getAuthToken() async {
+    // Si ya tenemos el token en memoria, lo devolvemos al instante.
+    if (_authToken != null && _authToken!.isNotEmpty) {
+      return _authToken;
     }
 
-    // Para móvil, necesitamos una IP específica si es el emulador de Android.
+    // Si no, lo buscamos en SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    final storedToken = prefs.getString(AuthStorageKeys.token);
+    
+    if (storedToken != null && storedToken.isNotEmpty) {
+      _authToken = storedToken; // Guardamos en memoria para futuros accesos rápidos.
+      return _authToken;
+    }
+
+    // Si no hay token en ningún lado, devolvemos null.
+    return null;
+  }
+  // --- FIN DEL MÉTODO AÑADIDO ---
+
+
+  /// Define la URL base del backend.
+  String get baseUrl {
+    // Tu lógica para determinar la IP local está perfecta.
+    // La IP '192.168.1.10' es un ejemplo, reemplázala por la IP de la máquina
+    // donde corre tu backend si estás probando en un dispositivo físico.
+    const String backendHost = "192.168.1.10"; // <--- CAMBIA ESTO POR LA IP DE TU PC
+    const String backendPort = "3000";
+
+    if (kIsWeb) {
+      // Para web, 'localhost' funciona.
+      return 'http://localhost:$backendPort';
+    }
+
     if (Platform.isAndroid) {
-      // El emulador de Android usa 10.0.2.2 para referirse al 'localhost' de la máquina anfitriona.
+      // El emulador de Android usa 10.0.2.2 para el localhost de la máquina.
       return 'http://10.0.2.2:$backendPort';
     }
 
-    // Para el simulador de iOS, macOS, Windows, Linux, 'localhost' suele funcionar bien.
+    // Para dispositivos físicos en la misma red, simulador de iOS, macOS, etc.
     return 'http://$backendHost:$backendPort';
-    
-    // <-- FIN DEL CAMBIO -->
   }
 
-  /// Define los headers comunes para todas las peticiones a la API.
+  /// Define los headers comunes para todas las peticiones.
   /// Incluye el Content-Type y el token de autorización si está disponible.
   Map<String, String> get commonHeaders => {
         'Content-Type': 'application/json; charset=UTF-8',

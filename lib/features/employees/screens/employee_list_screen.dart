@@ -1,4 +1,8 @@
+// lib/features/employees/screens/employee_list_screen.dart
+
+import 'dart:async'; // Importar para el Debounce
 import 'package:flutter/material.dart';
+import 'dart:math';
 import 'package:nuevo_proyecto_flutter/features/employees/models/employee_performance_model.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/screens/employee_detail_screen.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/services/employee_service.dart';
@@ -14,24 +18,73 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
   final EmployeeService _employeeService = EmployeeService();
   late Future<List<EmployeePerformance>> _employeesFuture;
 
-  // --- INICIO: VARIABLES PARA PAGINACIÓN ---
+  // --- NUEVO: ESTADO PARA BUSCADOR Y FILTRADO ---
+  final TextEditingController _searchController = TextEditingController();
+  List<EmployeePerformance> _allEmployees = [];
+  List<EmployeePerformance> _filteredEmployees = [];
+  Timer? _debounce;
+
+  // --- ESTADO PARA PAGINACIÓN ---
   int _currentPage = 0;
-  final int _itemsPerPage = 4;
-  // --- FIN: VARIABLES PARA PAGINACIÓN ---
+  final int _itemsPerPage = 3; 
+
+  final Map<int, Color> _employeeColors = {};
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   void _loadData() {
     if (mounted) {
       setState(() {
-        _currentPage = 0; // Resetea la página al cargar/refrescar
         _employeesFuture = _employeeService.fetchEmployeePerformance();
+        _employeesFuture.then((employees) {
+          if (mounted) {
+            setState(() {
+              _allEmployees = employees;
+              _filterEmployees();
+            });
+          }
+        });
       });
     }
+  }
+
+  // --- NUEVO: LÓGICA DE FILTRADO ---
+  void _onSearchChanged() {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      _filterEmployees();
+    });
+  }
+
+  void _filterEmployees() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      _filteredEmployees = _allEmployees.where((employee) {
+        return (employee.fullName ?? '').toLowerCase().contains(query);
+      }).toList();
+      _currentPage = 0; // Resetear página
+    });
+  }
+
+  Color _getColorForEmployee(int employeeId) {
+    if (!_employeeColors.containsKey(employeeId)) {
+      _employeeColors[employeeId] =
+          Colors.primaries[Random().nextInt(Colors.primaries.length)].shade200;
+    }
+    return _employeeColors[employeeId]!;
   }
 
   @override
@@ -39,72 +92,120 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rendimiento de Empleados'),
-        elevation: 1,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
       ),
       body: RefreshIndicator(
         onRefresh: () async => _loadData(),
-        child: FutureBuilder<List<EmployeePerformance>>(
-          future: _employeesFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return _buildErrorWidget(context, snapshot.error);
-            }
-            if (!snapshot.hasData || snapshot.data!.isEmpty) {
-              return _buildEmptyStateWidget(context);
-            }
+        child: Column(
+          children: [
+            // --- NUEVO: BARRA DE BÚSQUEDA ---
+            _buildSearchBar(),
+            Expanded(
+              child: FutureBuilder<List<EmployeePerformance>>(
+                future: _employeesFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting && _allEmployees.isEmpty) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snapshot.hasError && _allEmployees.isEmpty) {
+                    return _buildErrorWidget(context, snapshot.error);
+                  }
+                  if (_allEmployees.isEmpty && snapshot.connectionState != ConnectionState.waiting) {
+                    return _buildEmptyStateWidget(context);
+                  }
+                  if (_filteredEmployees.isEmpty && _searchController.text.isNotEmpty) {
+                    return _buildNoResultsWidget();
+                  }
 
-            final employees = snapshot.data!;
-            
-            // --- INICIO: LÓGICA DE PAGINACIÓN ---
-            if (employees.length <= _itemsPerPage) {
-              // Sin paginación si hay pocos elementos
-              return ListView.builder(
-                padding: const EdgeInsets.all(8.0),
-                itemCount: employees.length,
-                itemBuilder: (context, index) {
-                  return _buildEmployeeCard(context, employees[index]);
+                  final employeesToDisplay = _filteredEmployees;
+                  employeesToDisplay.sort((a, b) => (a.fullName ?? '').compareTo(b.fullName ?? ''));
+
+                  if (employeesToDisplay.length <= _itemsPerPage) {
+                    return _buildEmployeeListView(employeesToDisplay);
+                  } else {
+                    final totalPages = (employeesToDisplay.length / _itemsPerPage).ceil();
+                    if (_currentPage >= totalPages) _currentPage = totalPages - 1;
+
+                    final startIndex = _currentPage * _itemsPerPage;
+                    final endIndex = (startIndex + _itemsPerPage > employeesToDisplay.length)
+                        ? employeesToDisplay.length
+                        : startIndex + _itemsPerPage;
+                    
+                    final paginatedEmployees = employeesToDisplay.sublist(startIndex, endIndex);
+
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: _buildEmployeeListView(paginatedEmployees, animate: false),
+                        ),
+                        _buildPaginator(totalPages),
+                      ],
+                    );
+                  }
                 },
-              );
-            } else {
-              // Con paginación si hay muchos elementos
-              final totalPages = (employees.length / _itemsPerPage).ceil();
-              if (_currentPage >= totalPages) _currentPage = totalPages - 1;
-
-              final startIndex = _currentPage * _itemsPerPage;
-              final endIndex = (startIndex + _itemsPerPage > employees.length)
-                  ? employees.length
-                  : startIndex + _itemsPerPage;
-              
-              final paginatedEmployees = employees.sublist(startIndex, endIndex);
-
-              return Column(
-                children: [
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(8.0),
-                      itemCount: paginatedEmployees.length,
-                      itemBuilder: (context, index) {
-                        return _buildEmployeeCard(context, paginatedEmployees[index]);
-                      },
-                    ),
-                  ),
-                  _buildPaginator(totalPages),
-                ],
-              );
-            }
-            // --- FIN: LÓGICA DE PAGINACIÓN ---
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  // --- NUEVO WIDGET: PAGINADOR REDONDO (Reutilizado de Productos) ---
+  // --- NUEVO: WIDGET DE LA BARRA DE BÚSQUEDA ---
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Buscar empleado por nombre...',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () => _searchController.clear(),
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12.0),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12.0),
+            borderSide: BorderSide(color: Theme.of(context).colorScheme.primary),
+          ),
+          filled: true,
+          fillColor: Theme.of(context).colorScheme.surface,
+          contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmployeeListView(List<EmployeePerformance> employees, {bool animate = true}) {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+      itemCount: employees.length,
+      itemBuilder: (context, index) {
+        final employeeCard = _buildEmployeeCard(context, employees[index]);
+        if (animate) {
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: Duration(milliseconds: 400 + (index * 100)),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, child) {
+              return Opacity(opacity: value, child: Transform.translate(offset: Offset(0, 50 * (1 - value)), child: child));
+            },
+            child: employeeCard,
+          );
+        }
+        return employeeCard;
+      },
+    );
+  }
+
   Widget _buildPaginator(int totalPages) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -113,31 +214,24 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
         children: List.generate(totalPages, (index) {
           final bool isActive = index == _currentPage;
           return GestureDetector(
-            onTap: () {
-              setState(() {
-                _currentPage = index;
-              });
-            },
+            onTap: () => setState(() => _currentPage = index),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               curve: Curves.easeInOut,
               margin: const EdgeInsets.symmetric(horizontal: 5.0),
-              width: 32.0,
-              height: 32.0,
+              width: isActive ? 36.0 : 32.0,
+              height: isActive ? 36.0 : 32.0,
               decoration: BoxDecoration(
-                color: isActive
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.surfaceVariant,
+                color: isActive ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.surfaceVariant,
                 shape: BoxShape.circle,
+                boxShadow: isActive ? [ BoxShadow( color: Theme.of(context).colorScheme.primary.withOpacity(0.3), spreadRadius: 2, blurRadius: 4, offset: const Offset(0, 2), ) ] : [],
               ),
               child: Center(
                 child: Text(
                   '${index + 1}',
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    color: isActive
-                        ? Theme.of(context).colorScheme.onPrimary
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                    color: isActive ? Theme.of(context).colorScheme.onPrimary : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -148,14 +242,36 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
     );
   }
 
+  Widget _buildNoResultsWidget() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_search_outlined, size: 80, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          const Text('Sin resultados', style: TextStyle(fontSize: 18, color: Colors.grey)),
+          Text(
+            'No se encontraron empleados que coincidan con "${_searchController.text}".',
+            style: TextStyle(color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+  
+  // El resto de los widgets no necesitan cambios
   Widget _buildEmployeeCard(BuildContext context, EmployeePerformance employee) {
     final theme = Theme.of(context);
-    final name = employee.fullName;
+    final name = employee.fullName ?? 'Empleado Desconocido';
+    final totalOrders = (employee.inProgressOrdersCount ?? 0) + (employee.completedOrdersCount ?? 0);
+    final progress = totalOrders == 0 ? 0.0 : (employee.completedOrdersCount ?? 0) / totalOrders;
+    final avatarColor = _getColorForEmployee(employee.idEmployee ?? 0);
 
     return Card(
-      margin: const EdgeInsets.symmetric(vertical: 6.0, horizontal: 8.0),
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
       elevation: 2,
-      shadowColor: Colors.black.withOpacity(0.08),
+      shadowColor: Colors.black.withOpacity(0.1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -167,52 +283,66 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
         },
         child: Padding(
           padding: const EdgeInsets.all(16.0),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: theme.colorScheme.primaryContainer,
-                child: Text(
-                  (name != null && name.isNotEmpty) ? name.substring(0, 1).toUpperCase() : '?',
-                  style: TextStyle(fontSize: 22, color: theme.colorScheme.onPrimaryContainer, fontWeight: FontWeight.bold),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      employee.fullName ?? 'Empleado sin nombre',
-                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: avatarColor,
+                    child: Text(
+                      (name.isNotEmpty) ? name.split(' ').map((e) => e[0]).take(2).join().toUpperCase() : '?',
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Expanded(
-                          child: _buildStatChip(
-                            context,
-                            Icons.hourglass_top_outlined,
-                            '${employee.inProgressOrdersCount ?? 0} Activos',
-                            Colors.orange,
-                          ),
+                        Text(
+                          name,
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _buildStatChip(
-                            context,
-                            Icons.check_circle_outline,
-                            '${employee.completedOrdersCount ?? 0} Terminados',
-                            Colors.green,
-                          ),
-                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${employee.completedOrdersCount ?? 0} de $totalOrders órdenes completadas',
+                           style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                        )
                       ],
-                    )
-                  ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Tooltip(
+                message: '${(progress * 100).toStringAsFixed(0)}% completado',
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 8,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildStatChip(context, Icons.hourglass_top, 'En Proceso', '${employee.inProgressOrdersCount ?? 0}'),
+                  _buildStatChip(context, Icons.task_alt, 'Completadas', '${employee.completedOrdersCount ?? 0}'),
+                ],
+              )
             ],
           ),
         ),
@@ -220,32 +350,19 @@ class _EmployeeListScreenState extends State<EmployeeListScreen> {
     );
   }
 
-  Widget _buildStatChip(BuildContext context, IconData icon, String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
+  Widget _buildStatChip(BuildContext context, IconData icon, String label, String value) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[600]),
+        const SizedBox(width: 6),
+        Text('$label: ', style: TextStyle(color: Colors.grey[700])),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+      ],
     );
   }
 
-   Widget _buildEmptyStateWidget(BuildContext context) {
+  Widget _buildEmptyStateWidget(BuildContext context) {
     return LayoutBuilder(builder: (context, constraints) {
       return SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),

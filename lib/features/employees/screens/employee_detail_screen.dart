@@ -1,13 +1,11 @@
+// lib/features/employees/screens/employee_detail_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/services/employee_service.dart';
 import 'package:nuevo_proyecto_flutter/features/employees/models/employee_performance_model.dart';
 import 'package:nuevo_proyecto_flutter/features/production/models/production_order_model.dart';
-// --- INICIO: NUEVA IMPORTACIÓN ---
-// Importamos la nueva pantalla de detalle de la orden.
-// Asegúrate de que la ruta sea correcta.
 import 'package:nuevo_proyecto_flutter/features/production/screens/production_order_detail_screen.dart';
-// --- FIN: NUEVA IMPORTACIÓN ---
 
 class EmployeeDetailScreen extends StatefulWidget {
   final EmployeePerformance employee;
@@ -17,14 +15,22 @@ class EmployeeDetailScreen extends StatefulWidget {
   State<EmployeeDetailScreen> createState() => _EmployeeDetailScreenState();
 }
 
-class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
+class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> with TickerProviderStateMixin {
   final EmployeeService _employeeService = EmployeeService();
   late Future<Map<String, List<ProductionOrder>>> _ordersFuture;
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _ordersFuture = _loadOrders();
+  }
+  
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<Map<String, List<ProductionOrder>>> _loadOrders() async {
@@ -39,25 +45,63 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
       
       return {'inProgress': results[0], 'completed': results[1]};
     } catch (e) {
+      // Usar print en desarrollo está bien, pero considera un logger para producción.
+      // ignore: avoid_print
       print("Error en _loadOrders: $e");
       rethrow;
     }
   }
 
   void _refreshOrders() {
-    setState(() {
-      _ordersFuture = _loadOrders();
-    });
+    if (mounted) {
+      setState(() {
+        _ordersFuture = _loadOrders();
+      });
+    }
   }
+
+  // --- CAMBIO #2: Creamos una función para manejar la navegación y el refresco ---
+  void _navigateToDetail(ProductionOrder order) async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProductionOrderDetailScreen(
+          orderId: order.idProductionOrder,
+          // --- CAMBIO #1: Añadimos el parámetro requerido 'isKitchenStaff' ---
+          // TODO: Reemplaza 'true' con la lógica real de tu app para saber
+          // si el USUARIO ACTUAL (no el empleado del detalle) tiene permisos.
+          // Por ejemplo: authService.currentUser.role == 'kitchen_staff'
+          isKitchenStaff: true,
+        ),
+      ),
+    );
+
+    // Si la pantalla de detalle devolvió 'true', significa que hubo un cambio.
+    if (result == true && mounted) {
+      _refreshOrders();
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.employee.fullName ?? 'Detalle de Empleado'),
-        elevation: 1,
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        foregroundColor: Theme.of(context).textTheme.bodyLarge?.color,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: Theme.of(context).colorScheme.primary,
+          unselectedLabelColor: Colors.grey[600],
+          indicatorColor: Theme.of(context).colorScheme.primary,
+          indicatorWeight: 3.0,
+          tabs: const [
+            Tab(text: 'EN PROCESO'),
+            Tab(text: 'TERMINADAS'),
+          ],
+        ),
       ),
       body: FutureBuilder<Map<String, List<ProductionOrder>>>(
         future: _ordersFuture,
@@ -75,74 +119,121 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           final inProgressOrders = snapshot.data!['inProgress'] ?? [];
           final completedOrders = snapshot.data!['completed'] ?? [];
 
-          return RefreshIndicator(
-            onRefresh: () async => _refreshOrders(),
-            child: ListView(
-              padding: const EdgeInsets.all(16.0),
-              children: [
-                _buildOrderSection(context, 'Órdenes en Proceso', inProgressOrders, Icons.hourglass_top_outlined, Colors.orange),
-                const SizedBox(height: 24),
-                _buildOrderSection(context, 'Órdenes Terminadas', completedOrders, Icons.check_circle_outline, Colors.green),
-              ],
-            ),
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _buildOrderList(context, inProgressOrders, 'No hay órdenes en proceso.'),
+              _buildOrderList(context, completedOrders, 'No hay órdenes terminadas.'),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildOrderSection(BuildContext context, String title, List<ProductionOrder> orders, IconData icon, Color color) {
+  Widget _buildOrderList(BuildContext context, List<ProductionOrder> orders, String emptyMessage) {
+    if (orders.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.inbox_outlined, size: 60, color: Colors.grey[400]),
+              const SizedBox(height: 16),
+              Text(emptyMessage, style: TextStyle(color: Colors.grey[600], fontSize: 16)),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return RefreshIndicator(
+      onRefresh: () async => _refreshOrders(),
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+        itemCount: orders.length,
+        itemBuilder: (context, index) {
+          final order = orders[index];
+          return _buildOrderDetailCard(context, order);
+        },
+      ),
+    );
+  }
+
+  Widget _buildOrderDetailCard(BuildContext context, ProductionOrder order) {
     final theme = Theme.of(context);
+    final (statusText, statusColor) = _getStatusInfo(order.status);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12.0),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        // Usamos la nueva función de navegación
+        onTap: () => _navigateToDetail(order),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      order.productNameSnapshot ?? 'Producto no especificado',
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Chip(
+                    label: Text(statusText, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500, fontSize: 12)),
+                    backgroundColor: statusColor,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    visualDensity: VisualDensity.compact,
+                  )
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _buildInfoColumn('ID Orden', '#${order.idProductionOrder}'),
+                  _buildInfoColumn('Creada', order.createdAt != null ? DateFormat('dd/MM/yyyy').format(order.createdAt!) : 'N/A'),
+                  _buildInfoColumn('Cantidad', '${order.initialAmount ?? 'N/A'} u.'),
+                ],
+              )
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoColumn(String label, String value) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(width: 12),
-            Text(title, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-            const SizedBox(width: 8),
-            Text('(${orders.length})', style: theme.textTheme.titleLarge?.copyWith(color: Colors.grey[600], fontWeight: FontWeight.normal)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (orders.isEmpty)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 32.0),
-            alignment: Alignment.center,
-            child: Text("No hay órdenes en esta categoría.", style: TextStyle(color: Colors.grey[600])),
-          )
-        else
-          ...orders.map((order) {
-            return Card(
-              margin: const EdgeInsets.only(top: 8.0),
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              clipBehavior: Clip.antiAlias,
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                title: Text(order.productNameSnapshot ?? 'Producto no especificado', style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text('ID: ${order.idProductionOrder}'),
-                trailing: order.createdAt != null
-                    ? Text(DateFormat('dd/MM/yy').format(order.createdAt!), style: const TextStyle(color: Colors.grey))
-                    : const SizedBox.shrink(),
-                // --- INICIO: CAMBIO EN onTap ---
-                // Ahora navegamos a la pantalla de detalle de la orden
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ProductionOrderDetailScreen(order: order),
-                    ),
-                  );
-                },
-                // --- FIN: CAMBIO EN onTap ---
-              ),
-            );
-          }).toList(),
+        Text(label, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        const SizedBox(height: 2),
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
       ],
     );
+  }
+
+  (String, Color) _getStatusInfo(String? status) {
+    switch (status) {
+      case 'IN_PROGRESS': return ('En Proceso', Colors.orange.shade700);
+      case 'PAUSED': return ('En Pausa', Colors.blueGrey);
+      case 'COMPLETED': return ('Completada', Colors.green.shade700);
+      default: return ('Desconocido', Colors.grey);
+    }
   }
 
   Widget _buildErrorWidget() {
