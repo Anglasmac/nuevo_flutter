@@ -102,3 +102,7 @@ String get fullName {
   @override
   String toString() => 'Cliente(id: $id, fullName: $fullName, email: $email)';
 }
+
+
+
+
