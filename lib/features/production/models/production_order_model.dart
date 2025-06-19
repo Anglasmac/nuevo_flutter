@@ -1,40 +1,67 @@
 // lib/features/production/models/production_order_model.dart
 
+// Modelo para un paso de producción individual.
+class ProductionStep {
+  final int idProductionOrderDetail;
+  final int processOrder;
+  final String processName;
+  final String status;
+  final String? employeeFullName;
+
+  ProductionStep({
+    required this.idProductionOrderDetail,
+    required this.processOrder,
+    required this.processName,
+    required this.status,
+    this.employeeFullName,
+  });
+
+  factory ProductionStep.fromJson(Map<String, dynamic> json) {
+    // Busca el nombre del empleado dentro del objeto anidado 'employeeAssigned'.
+    final employeeData = json['employeeAssigned'] as Map<String, dynamic>?;
+
+    return ProductionStep(
+      idProductionOrderDetail: json['idProductionOrderDetail'] ?? 0,
+      processOrder: json['processOrder'] ?? 0,
+      processName: json['processNameOverride'] ?? json['MasterProcess']?['processName'] ?? 'Paso sin nombre',
+      status: json['status'] ?? 'PENDING',
+      employeeFullName: employeeData?['fullName'],
+    );
+  }
+}
+
+
+// Modelo principal para una orden de producción completa.
 class ProductionOrder {
-  // Campos existentes
+  // --- CAMPOS DE IDENTIFICACIÓN Y ESTADO ---
   final int idProductionOrder;
   final String status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
   final DateTime? completedAt; 
-  final int? idEmployeeAssigned;
-  final String? nameClient;
   final String? productNameSnapshot;
-  final String? employeeFullName; 
+  final String? nameClient;
   
-  // ==================== INICIO: NUEVOS CAMPOS AÑADIDOS ====================
-  // Mapeados desde tu modelo de Sequelize
+  // --- EMPLEADO ---
+  // El ID del empleado es el que está en la tabla, el fullName viene de la relación.
+  final int? idEmployeeAssigned;
+  final String? employeeFullName; // Empleado que REGISTRÓ la orden.
   
-  // --- Planificación ---
-  final int? initialAmount;            // Cantidad planeada a producir
-  final double? inputInitialWeight;       // Peso inicial del insumo principal
-  final String? inputInitialWeightUnit;   // Unidad del peso inicial
-
-  // --- Resultados ---
-  final int? finalQuantityProduct;     // Cantidad final REAL obtenida
-  final double? finishedProductWeight;    // Peso final REAL del producto
-  final String? finishedProductWeightUnit;// Unidad del peso final
+  // --- DATOS DE PLANIFICACIÓN ---
+  final int? initialAmount;
+  final double? inputInitialWeight;
+  final String? inputInitialWeightUnit;
   
-  // --- Merma (opcional de mostrar, pero bueno tenerlo) ---
+  // --- DATOS DE RESULTADOS/FINALIZACIÓN ---
+  final int? finalQuantityProduct;
+  final double? finishedProductWeight;
+  final String? finishedProductWeightUnit;
   final double? inputFinalWeightUnused;
   final String? inputFinalWeightUnusedUnit;
-  
-  // --- Otros ---
   final String? observations;
 
-  // El campo `quantityToProduce` que teníamos antes ahora es `initialAmount`
-  // para coincidir con tu backend.
-  // ===================== FIN: NUEVOS CAMPOS AÑADIDOS ======================
+  // --- DATOS RELACIONADOS ---
+  final List<ProductionStep> steps;
 
   ProductionOrder({
     required this.idProductionOrder,
@@ -46,7 +73,6 @@ class ProductionOrder {
     this.nameClient,
     this.productNameSnapshot,
     this.employeeFullName,
-    // Añadir nuevos campos al constructor
     this.initialAmount,
     this.inputInitialWeight,
     this.inputInitialWeightUnit,
@@ -56,15 +82,34 @@ class ProductionOrder {
     this.inputFinalWeightUnused,
     this.inputFinalWeightUnusedUnit,
     this.observations,
+    this.steps = const [], // Valor por defecto para la lista de pasos.
   });
 
   factory ProductionOrder.fromJson(Map<String, dynamic> json) {
-    // Helper para parsear números que pueden ser string o int/double
+    // Función helper para parsear números decimales de forma segura.
     double? tryParseDouble(dynamic value) {
       if (value == null) return null;
       if (value is double) return value;
       return double.tryParse(value.toString());
     }
+
+    // Lógica para parsear la lista de pasos (details) si existe.
+    var stepList = <ProductionStep>[];
+    if (json['details'] != null && json['details'] is List) {
+      stepList = (json['details'] as List)
+          .map((s) => ProductionStep.fromJson(s as Map<String, dynamic>))
+          .toList();
+      // Ordena los pasos para asegurar la secuencia correcta en la UI.
+      stepList.sort((a, b) => a.processOrder.compareTo(b.processOrder));
+    }
+
+    // --- CORRECCIÓN PRECISA Y ROBUSTA AQUÍ ---
+    // Intentamos obtener el nombre del empleado de cualquiera de los posibles
+    // alias que el backend podría enviar: 'employeeRegistered', 'Employee', o 'employeeAssigned'.
+    // El operador '??' (null-aware) pasa al siguiente si el anterior es nulo.
+    final String? registeredEmployeeName = json['employeeRegistered']?['fullName'] 
+                                         ?? json['Employee']?['fullName'] 
+                                         ?? json['employeeAssigned']?['fullName'];
 
     return ProductionOrder(
       idProductionOrder: json['idProductionOrder'] as int,
@@ -75,25 +120,22 @@ class ProductionOrder {
       idEmployeeAssigned: json['idEmployeeAssigned'] as int?,
       nameClient: json['nameClient'] as String?,
       productNameSnapshot: json['productNameSnapshot'] as String?,
-      employeeFullName: json['employeeFullName'] as String?,
+      
+      // Asignamos el nombre del empleado que encontramos.
+      employeeFullName: registeredEmployeeName,
 
-      // ==================== PARSEO DE NUEVOS CAMPOS ====================
       initialAmount: json['initialAmount'] as int?,
       inputInitialWeight: tryParseDouble(json['inputInitialWeight']),
       inputInitialWeightUnit: json['inputInitialWeightUnit'] as String?,
-      
       finalQuantityProduct: json['finalQuantityProduct'] as int?,
       finishedProductWeight: tryParseDouble(json['finishedProductWeight']),
       finishedProductWeightUnit: json['finishedProductWeightUnit'] as String?,
-
       inputFinalWeightUnused: tryParseDouble(json['inputFinalWeightUnused']),
       inputFinalWeightUnusedUnit: json['inputFinalWeightUnusedUnit'] as String?,
-      
       observations: json['observations'] as String?,
-      // ===============================================================
+      
+      // Asignamos la lista de pasos parseada.
+      steps: stepList, 
     );
   }
-
-  // El método toJson() no es estrictamente necesario para mostrar datos, 
-  // pero es buena práctica mantenerlo actualizado si lo usas en otro lugar.
 }
