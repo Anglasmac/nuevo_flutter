@@ -1,125 +1,162 @@
-// lib/services/api_service.dart
-
 import 'dart:convert';
+import 'package:flutter/foundation.dart'; // Necesario para kDebugMode (mejora)
 import 'package:http/http.dart' as http;
-import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
-import 'package:nuevo_proyecto_flutter/services/ase_api_service.dart';
 
-// <-- REFACTORIZACIÓN: ApiService ahora extiende BaseApiService.
-// Hereda automáticamente `baseUrl`, `commonHeaders` y la gestión del token.
-class ApiService extends BaseApiService {
+// Importamos todos los modelos que este servicio va a manejar.
+import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
+import 'package:nuevo_proyecto_flutter/features/clientes/models/cliente_model.dart';
+import 'package:nuevo_proyecto_flutter/features/servicios/models/servicio_model.dart';
+// TODO: Considera añadir un servicio de autenticación para obtener el token.
+// import 'package:nuevo_proyecto_flutter/services/auth_service.dart';
+
+
+class ApiService {
+  // ✅ CONFIGURACIÓN CENTRALIZADA DENTRO DE LA CLASE
+  // ¡IMPORTANTE! Usa 'http://10.0.2.2:3000/api' para el emulador de Android.
+  // Para iOS o dispositivo físico, usa la IP de tu PC (ej: 'http://192.168.1.100:3000/api').
+  // ✅ LÍNEA CORRECTA (para web)
+static const String _baseUrl = 'http://localhost:3000';
+
   
-  // --- MÉTODOS ESPECÍFICOS PARA EL ENDPOINT DE RESERVAS (/reservations) ---
+  // Getter para las cabeceras comunes. Puede ser dinámico.
+  Map<String, String> get _commonHeaders {
+    // Si tuvieras un sistema de login, aquí obtendrías el token.
+    // final String? token = AuthService.instance.token;
+    return {
+      'Content-Type': 'application/json; charset=UTF-8',
+      // if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  // --- MÉTODOS PARA EL ENDPOINT DE RESERVAS ---
 
   Future<List<Reserva>> fetchReservations() async {
-    final Uri url = Uri.parse('$baseUrl/reservations');
-    print('ApiService: GET $url');
+    final Uri url = Uri.parse('$_baseUrl/reservations');
+    if (kDebugMode) print('ApiService: GET $url');
 
     try {
-      final response = await http.get(url, headers: commonHeaders);
+      final response = await http.get(url, headers: _commonHeaders);
 
       if (response.statusCode == 200) {
         final List<dynamic> jsonData = json.decode(response.body);
-        print('ApiService: Fetched ${jsonData.length} reservations.');
-        return jsonData
-            .map((item) => Reserva.fromJson(item as Map<String, dynamic>))
-            .toList();
+        return jsonData.map((item) => Reserva.fromJson(item)).toList();
       } else {
-        print('ApiService Error (fetchReservations): ${response.statusCode} - ${response.body}');
-        throw Exception('Fallo al cargar reservaciones (Código: ${response.statusCode})\n${response.body}');
+        throw Exception('Fallo al cargar reservaciones (Código: ${response.statusCode})');
       }
     } catch (e) {
-      print('ApiService Exception (fetchReservations): $e');
       throw Exception('Error de conexión al obtener reservaciones: $e');
     }
   }
 
   Future<Reserva> createReservation(Reserva reservationData) async {
-    final Uri url = Uri.parse('$baseUrl/reservations');
+    final Uri url = Uri.parse('$_baseUrl/reservations');
     final String requestBody = jsonEncode(reservationData.toJson());
-    print('ApiService: POST $url with body: $requestBody');
+    if (kDebugMode) print('ApiService: POST $url with body: $requestBody');
 
     try {
-      final response = await http.post(
-        url,
-        headers: commonHeaders,
-        body: requestBody,
-      );
+      final response = await http.post(url, headers: _commonHeaders, body: requestBody);
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        print('ApiService: Reservation created successfully. Response: ${response.body}');
-        return Reserva.fromJson(json.decode(response.body) as Map<String, dynamic>);
+      if (response.statusCode == 201) { // 201 Created es el código correcto
+        return Reserva.fromJson(json.decode(response.body));
       } else {
-        print('ApiService Error (createReservation): ${response.statusCode} - ${response.body}');
         throw Exception('Fallo al crear la reservación (Código: ${response.statusCode})\n${response.body}');
       }
     } catch (e) {
-      print('ApiService Exception (createReservation): $e');
       throw Exception('Error de conexión al crear reservación: $e');
     }
   }
-
-  Future<Reserva> fetchReservationById(String reservationId) async {
-    final Uri url = Uri.parse('$baseUrl/reservations/$reservationId');
-    print('ApiService: GET $url');
-
-    try {
-      final response = await http.get(url, headers: commonHeaders);
-
-      if (response.statusCode == 200) {
-        print('ApiService: Fetched reservation $reservationId. Response: ${response.body}');
-        return Reserva.fromJson(json.decode(response.body) as Map<String, dynamic>);
-      } else {
-        print('ApiService Error (fetchReservationById): ${response.statusCode} - ${response.body}');
-        throw Exception('Fallo al cargar reservación $reservationId (Código: ${response.statusCode})\n${response.body}');
-      }
-    } catch (e) {
-      print('ApiService Exception (fetchReservationById): $e');
-      throw Exception('Error de conexión al obtener reservación $reservationId: $e');
-    }
-  }
-
-  Future<Reserva> updateReservation(String reservationId, Reserva reservationData) async {
-    final Uri url = Uri.parse('$baseUrl/reservations/$reservationId');
+  
+  Future<Reserva> updateReservation(int reservationId, Reserva reservationData) async {
+    final Uri url = Uri.parse('$_baseUrl/reservations/$reservationId');
     final String requestBody = jsonEncode(reservationData.toJson());
-    print('ApiService: PUT $url with body: $requestBody');
+    if (kDebugMode) print('ApiService: PUT $url with body: $requestBody');
 
     try {
-      final response = await http.put(
-        url,
-        headers: commonHeaders,
-        body: requestBody,
-      );
+      final response = await http.put(url, headers: _commonHeaders, body: requestBody);
 
       if (response.statusCode == 200) {
-        print('ApiService: Reservation $reservationId updated. Response: ${response.body}');
-        return Reserva.fromJson(json.decode(response.body) as Map<String, dynamic>);
+        return Reserva.fromJson(json.decode(response.body));
       } else {
-        print('ApiService Error (updateReservation): ${response.statusCode} - ${response.body}');
-        throw Exception('Fallo al actualizar reservación $reservationId (Código: ${response.statusCode})\n${response.body}');
+        throw Exception('Fallo al actualizar reservación (Código: ${response.statusCode})\n${response.body}');
       }
     } catch (e) {
-      print('ApiService Exception (updateReservation): $e');
-      throw Exception('Error de conexión al actualizar reservación $reservationId: $e');
+      throw Exception('Error de conexión al actualizar reservación: $e');
     }
   }
 
   Future<void> deleteReservation(String reservationId) async {
-    final Uri url = Uri.parse('$baseUrl/reservations/$reservationId');
-    print('ApiService: DELETE $url');
+    final Uri url = Uri.parse('$_baseUrl/reservations/$reservationId');
+    if (kDebugMode) print('ApiService: DELETE $url');
 
     try {
-      final response = await http.delete(url, headers: commonHeaders);
+      final response = await http.delete(url, headers: _commonHeaders);
 
-      if (response.statusCode == 200 || response.statusCode == 204) {
-        print('ApiService: Reservation $reservationId deleted successfully.');
-      } else {
-        print('ApiService Error (deleteReservation): ${response.statusCode} - ${response.body}');
-        throw Exception('Fallo al eliminar reservación $reservationId (Código: ${response.statusCode})\n${response.body}');
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Fallo al eliminar reservación (Código: ${response.statusCode})\n${response.body}');
       }
     } catch (e) {
-      print('ApiService Exception (deleteReservation): $e');
-      throw Exception('Error de conexión al eliminar reservación $reservationId: $e');
+      throw Exception('Error de conexión al eliminar reservación: $e');
     }
   }
+
+  // ✅ NUEVO MÉTODO: Obtener lista de clientes
+  Future<List<Cliente>> fetchClientes() async {
+    final response = await http.get(Uri.parse('$_baseUrl/customers')); // Asegúrate de que la ruta `/customers` sea correcta
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) => Cliente.fromJson(json)).toList();
+    } else {
+      throw Exception('Error al cargar los clientes');
+    }
+  }
+
+  // ✅ NUEVO MÉTODO: Obtener lista de servicios adicionales
+  Future<List<ServicioAdicional>> fetchServiciosAdicionales() async {
+    final response = await http.get(Uri.parse('$_baseUrl/aditionalServices')); // Asegúrate de que la ruta `/aditionalServices` sea correcta
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((json) => ServicioAdicional.fromJson(json)).toList();
+    } else {
+      throw Exception('Error al cargar los servicios adicionales');
+    }
+  }
+
+  // Agregar este método a tu ApiService:
+
+// Reemplaza el método fetchServiceIdsForReservation con esta versión corregida:
+
+// REEMPLAZA el método fetchServiceIdsForReservation con este:
+// (Elimina el método anterior y usa este)
+
+Future<List<int>> fetchServiceIdsForReservation(int reservationId) async {
+  try {
+    print("📞 Obteniendo servicios para reserva $reservationId desde reserva individual");
+    
+    // Obtener la reserva individual con servicios incluidos
+    final response = await http.get(
+      Uri.parse('$_baseUrl/reservations/$reservationId'), // ✅ Endpoint que SÍ existe
+      headers: _commonHeaders,
+    );
+    
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> reservaData = json.decode(response.body);
+      print("🔍 Datos de reserva individual: $reservaData");
+      
+      // Verificar si tiene servicios adicionales
+      if (reservaData.containsKey('AditionalServices')) {
+        final List<dynamic> services = reservaData['AditionalServices'];
+        final serviceIds = services.map((service) => service['idAditionalServices'] as int).toList();
+        print("✅ IDs de servicios obtenidos: $serviceIds");
+        return serviceIds;
+      }
+    }
+    
+    print("⚠️ No se encontraron servicios para la reserva $reservationId");
+    return [];
+  } catch (e) {
+    print("❌ Error obteniendo servicios: $e");
+    return [];
+  }
+}
+
 }

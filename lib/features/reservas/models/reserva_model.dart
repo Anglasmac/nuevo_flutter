@@ -1,129 +1,208 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
-/// Modelo de datos para una Reserva.
-///
-/// Esta clase representa una reserva en la aplicación, incluyendo sus propiedades
-/// y los métodos para serializar/deserializar desde/hacia JSON.
+List<Reserva> reservaFromJson(String str) => List<Reserva>.from(json.decode(str).map((x) => Reserva.fromJson(x)));
+String reservaToJson(List<Reserva> data) => json.encode(List<dynamic>.from(data.map((x) => x.toJson())));
+
+class Abono {
+  final DateTime fecha;
+  final double monto;
+
+  Abono({required this.fecha, required this.monto});
+
+  factory Abono.fromJson(Map<String, dynamic> json) {
+    final montoValue = json["cantidad"] ?? json["monto"] ?? 0;
+    
+    return Abono(
+      fecha: DateTime.parse(json["fecha"]),
+      monto: (montoValue as num).toDouble(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    "fecha": fecha.toIso8601String().split('T')[0],
+    "cantidad": monto,
+  };
+}
+
 class Reserva {
-  // --- PROPIEDADES PRINCIPALES ---
-
-  /// ID único de la reserva, generado por el backend. Es nullable porque
-  /// al crear una nueva reserva, aún no tenemos ID.
-  final String? id;
-
-  /// Nombre del evento o cliente asociado a la reserva.
-  final String eventName;
-
-  /// **Fecha y hora de la reserva. Este es el campo unificado y correcto.**
-  final DateTime reservationDate;
-
-  /// Ubicación de la reserva (opcional).
-  final String? location;
-
-  /// Notas adicionales sobre la reserva (opcional).
+  final int? idReservations;
+  final DateTime dateTime;
+  final int numberPeople;
+  final String matter; 
+  final String timeDurationR;
+  final double decorationAmount;
+  final double remaining;
+  final String evenType;
+  final double totalPay;
+  final String status;
+  final int idCustomers;
+  final List<Abono> abonos;
+  final List<int> idAditionalServices;
   final String? notes;
-
-  /// Color para la UI. No se envía al backend en este modelo.
   final Color color;
 
-  // --- GETTER DE COMPATIBILIDAD (Solución al error actual) ---
-
-  /// Getter para retrocompatibilidad.
-  ///
-  /// Cualquier parte del código que aún use `reserva.eventDateTime`
-  /// será redirigida para que use el valor de `reservationDate`.
-  /// Esto evita que la aplicación se rompa mientras refactorizas.
-  /// **OBJETIVO: Eliminar el uso de `eventDateTime` en tu UI y luego borrar este getter.**
-  DateTime get eventDateTime => reservationDate;
-
-  // --- CONSTRUCTOR ---
+  // Getters para compatibilidad
+  DateTime get eventDateTime => dateTime;
+  String get eventName => evenType.isNotEmpty ? evenType : 'Reserva';
+  String get location => 'No especificada'; 
 
   Reserva({
-    this.id,
-    required this.eventName,
-    required this.reservationDate,
-    this.location,
+    this.idReservations,
+    required this.dateTime,
+    required this.numberPeople,
+    required this.matter,
+    required this.timeDurationR,
+    required this.decorationAmount,
+    required this.remaining,
+    required this.evenType,
+    required this.totalPay,
+    required this.status,
+    required this.idCustomers,
+    this.abonos = const [],
+    this.idAditionalServices = const [],
     this.notes,
     this.color = Colors.blue,
   });
 
-  // --- MÉTODO `fromJson` (De JSON a Objeto Dart) ---
+factory Reserva.fromJson(Map<String, dynamic> json) {
+  // ✅ DEBUGGING: Ver TODO lo que llega desde tu API
+  print("🔍 ===== RESERVA JSON COMPLETO =====");
+  print(json);
+  print("🔍 ===== CAMPOS DISPONIBLES =====");
+  json.forEach((key, value) {
+    print("$key: $value (${value.runtimeType})");
+  });
+  print("🔍 ================================");
+  
+  List<Abono> parsedAbonos = [];
+  final abonosData = json['pass'] ?? json['abonos'];
+  if (abonosData is List) {
+    parsedAbonos = abonosData
+        .where((item) => item is Map<String, dynamic>)
+        .map((item) => Abono.fromJson(item))
+        .toList();
+  }
 
-  /// Crea una instancia de `Reserva` a partir de un mapa JSON (respuesta de la API).
-  ///
-  /// Este método es robusto y busca la fecha con varias claves posibles (`reservationDate` o `eventDateTime`)
-  /// para asegurar la compatibilidad con lo que envíe la API.
-  factory Reserva.fromJson(Map<String, dynamic> json) {
-    // 1. Validar y parsear la fecha (el campo más crítico)
-    DateTime? parsedDate;
-    
-    // Primero, intenta buscar la clave 'reservationDate'. Si no existe, busca 'eventDateTime'.
-    final dateString = json['reservationDate'] ?? json['eventDateTime'];
-
-    if (dateString != null && dateString is String) {
-      try {
-        parsedDate = DateTime.parse(dateString);
-      } catch (e) {
-        print("Error al parsear la fecha de la reserva: '$dateString'. Error: $e");
-        // Asignamos una fecha por defecto como fallback para no crashear la app.
-        parsedDate = DateTime.now();
+  // ✅ BUSCAR SERVICIOS EN TODOS LOS FORMATOS POSIBLES
+  List<int> servicesIds = [];
+  
+  // Revisar TODOS los campos posibles donde pueden venir los servicios
+  final possibleServiceFields = [
+    'AditionalServices',
+    'aditionalServices', 
+    'additionalServices',
+    'additional_services',
+    'services',
+    'Services',
+    'idAditionalServices',
+    'servicios',
+    'Servicios'
+  ];
+  
+  for (String field in possibleServiceFields) {
+    if (json[field] != null) {
+      print("🔍 Campo '$field' encontrado: ${json[field]}");
+      
+      if (json[field] is List) {
+        final services = json[field] as List;
+        print("🔍 Es una lista con ${services.length} elementos");
+        
+        for (var service in services) {
+          print("🔍 Elemento del servicio: $service (${service.runtimeType})");
+          
+          if (service is Map<String, dynamic>) {
+            // Es un objeto completo del servicio
+            final id = service['idAditionalServices'] ?? 
+                      service['id'] ?? 
+                      service['ID'] ?? 
+                      service['Id'] ?? 0;
+            if (id is int && id > 0) {
+              servicesIds.add(id);
+              print("✅ ID de servicio agregado: $id");
+            }
+          } else if (service is int) {
+            // Es solo el ID
+            servicesIds.add(service);
+            print("✅ ID directo agregado: $service");
+          }
+        }
+        break; // Salir del loop si encontramos servicios
       }
+    }
+  }
+  
+  print("🔍 IDs de servicios finales: $servicesIds");
+
+  // Manejo de fecha/hora
+  DateTime parsedDateTime;
+  try {
+    final dateTimeStr = json["dateTime"];
+    if (dateTimeStr is String) {
+      parsedDateTime = DateTime.parse(dateTimeStr.split('.')[0]);
     } else {
-      // Si la fecha es nula o no es un String, se maneja el error.
-      print("Advertencia: La fecha de la reserva es nula o inválida en el JSON. ID: ${json['id']}");
-      parsedDate = DateTime.now(); // Fallback
+      parsedDateTime = DateTime.now();
     }
-
-    // 2. Determinar el color para la UI
-    Color parsedColor = _getColorFromJson(json);
-
-    // 3. Crear y devolver la instancia de Reserva
-    return Reserva(
-      id: json['id']?.toString(),
-      eventName: json['eventName'] as String? ?? 'Evento sin nombre',
-      reservationDate: parsedDate, // Siempre usamos la propiedad correcta en el constructor
-      location: json['location'] as String?,
-      notes: json['notes'] as String?,
-      color: parsedColor,
-    );
+  } catch (e) {
+    print("❌ Error parsing dateTime: $e");
+    parsedDateTime = DateTime.now();
   }
 
-  /// Método helper privado para determinar el color a partir del JSON.
-  static Color _getColorFromJson(Map<String, dynamic> json) {
-    // Lógica simple para asignar un color basado en el hash del ID.
-    // Esto da un color consistente para la misma reserva cada vez.
-    final idString = json['id']?.toString();
-    if (idString != null) {
-      final List<Color> defaultColors = [
-        Colors.blue.shade300,
-        Colors.red.shade300,
-        Colors.green.shade300,
-        Colors.orange.shade300,
-        Colors.purple.shade300,
-        Colors.teal.shade300,
-        Colors.pink.shade300,
-      ];
-      return defaultColors[idString.hashCode % defaultColors.length];
-    }
-    return Colors.blueGrey; // Color por defecto si no hay ID
-  }
+  final reserva = Reserva(
+    idReservations: json["idReservations"],
+    dateTime: parsedDateTime,
+    numberPeople: json["numberPeople"] ?? 0,
+    matter: json["matter"] ?? '',
+    timeDurationR: json["timeDurationR"]?.toString() ?? '0',
+    decorationAmount: (json["decorationAmount"] as num?)?.toDouble() ?? 0.0,
+    remaining: (json["remaining"] as num?)?.toDouble() ?? 0.0,
+    evenType: json["evenType"] ?? 'Otro',
+    totalPay: (json["totalPay"] as num?)?.toDouble() ?? 0.0,
+    status: json["status"] ?? 'pendiente',
+    idCustomers: json["idCustomers"],
+    abonos: parsedAbonos,
+    idAditionalServices: servicesIds,
+    notes: json['notes'],
+    color: _mapStatusToColor(json["status"]),
+  );
+  
+  print("✅ Reserva creada con ${servicesIds.length} servicios");
+  return reserva;
+}
 
-  // --- MÉTODO `toJson` (De Objeto Dart a JSON) ---
-
-  /// Convierte la instancia de `Reserva` a un mapa JSON para enviar a la API.
-  ///
-  /// Se asegura de usar la clave que el backend espera.
   Map<String, dynamic> toJson() {
+    // ✅ CORRECCIÓN: Enviar fecha/hora preservando la zona horaria local
     return {
-      // No incluimos 'id' aquí, ya que el backend lo genera o se pasa en la URL.
-      'eventName': eventName,
-      // **IMPORTANTE**: Usa la clave que tu backend espera al recibir datos.
-      // Si el backend espera 'reservationDate', déjalo así.
-      // Si el backend espera 'eventDateTime', cambia la clave aquí abajo.
-      'reservationDate': reservationDate.toIso8601String(),
-      'location': location,
-      'notes': notes,
-      // No incluimos el color, ya que es solo para la UI.
+      "idCustomers": idCustomers,
+      "dateTime": dateTime.toIso8601String(),
+      "numberPeople": numberPeople,
+      "matter": matter,
+      "timeDurationR": timeDurationR,
+      "decorationAmount": decorationAmount,
+      "remaining": remaining,
+      "evenType": evenType,
+      "totalPay": totalPay,
+      "status": status,
+      if (notes != null) "notes": notes,
+      "pass": abonos.map((abono) => abono.toJson()).toList(),
+      "idAditionalServices": idAditionalServices,
     };
+  }
+
+  static Color _mapStatusToColor(String? status) {
+    switch (status) {
+      case 'terminada':
+        return const Color(0xBB4CAF50);
+      case 'anulada':
+        return const Color(0xBBF44336);
+      case 'pendiente':
+        return const Color(0xBBFF9800);
+      case 'en_proceso':
+        return const Color(0xBBFFEB3B);
+      case 'confirmada':
+        return const Color(0xBB2196F3);
+      default:
+        return Colors.grey.shade400;
+    }
   }
 }

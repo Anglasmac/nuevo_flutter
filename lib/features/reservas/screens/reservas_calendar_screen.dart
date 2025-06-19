@@ -1,8 +1,10 @@
 // lib/features/reservas/screens/reservas_calendar_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/models/reserva_model.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/screens/create_reservation_screen.dart';
 import 'package:nuevo_proyecto_flutter/features/reservas/widgets/reservation_card.dart';
+import 'package:nuevo_proyecto_flutter/features/clientes/models/cliente_model.dart';
 import 'package:nuevo_proyecto_flutter/services/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
@@ -22,6 +24,7 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
   final ApiService _apiService = ApiService();
   Map<DateTime, List<Reserva>> _eventsFromApi = {};
   List<Reserva> _selectedDayReservas = [];
+  List<Cliente> _clientes = []; // ✅ NUEVO: Lista de clientes
   bool _isLoadingEvents = true;
   String? _loadingError;
 
@@ -35,38 +38,42 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
   Future<void> _fetchAndProcessReservations() async {
     setState(() {
       _isLoadingEvents = true;
-      _loadingError = null; // Limpiar error anterior
-      _eventsFromApi = {};
+      _loadingError = null;
     });
 
     try {
-      final List<Reserva> allReservations = await _apiService.fetchReservations();
+      // ✅ NUEVO: Cargar clientes junto con reservas
+      final futures = await Future.wait([
+        _apiService.fetchReservations(),
+        _apiService.fetchClientes(),
+      ]);
+      
+      final List<Reserva> allReservations = futures[0] as List<Reserva>;
+      _clientes = futures[1] as List<Cliente>;
+      
       final Map<DateTime, List<Reserva>> groupedEvents = {};
 
       for (final reserva in allReservations) {
-        final dateOnly = DateTime(reserva.eventDateTime.year, reserva.eventDateTime.month, reserva.eventDateTime.day);
+        final dateOnly = DateTime(reserva.dateTime.year, reserva.dateTime.month, reserva.dateTime.day);
         if (groupedEvents[dateOnly] == null) {
           groupedEvents[dateOnly] = [];
         }
         groupedEvents[dateOnly]!.add(reserva);
       }
 
+      if (!mounted) return;
+
       setState(() {
         _eventsFromApi = groupedEvents;
         if (_selectedDay != null) {
           _updateSelectedDayReservas(_selectedDay!);
         }
+        _isLoadingEvents = false;
       });
     } catch (e) {
-      print("Error al cargar reservaciones en pantalla: $e");
+      if (!mounted) return;
       setState(() {
         _loadingError = "Error al cargar: ${e.toString()}";
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error al cargar reservaciones: ${e.toString()}')),
-      );
-    } finally {
-      setState(() {
         _isLoadingEvents = false;
       });
     }
@@ -80,7 +87,7 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
   void _updateSelectedDayReservas(DateTime day) {
     setState(() {
       _selectedDayReservas = _getEventsForDay(day);
-      _selectedDayReservas.sort((a, b) => a.eventDateTime.compareTo(b.eventDateTime));
+      _selectedDayReservas.sort((a, b) => a.dateTime.compareTo(b.dateTime));
     });
   }
 
@@ -89,7 +96,6 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
       setState(() {
         _selectedDay = selectedDay;
         _focusedDay = focusedDay;
-        _calendarFormat = CalendarFormat.week; // Opcional: Cambiar a vista semanal
       });
       _updateSelectedDayReservas(selectedDay);
     }
@@ -107,35 +113,37 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
     }
   }
 
-  void _navigateToCreateAndRefresh() async {
+  void _navigateToFormAndRefresh({Reserva? reserva}) async {
     final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => CreateReservationScreen(
-          selectedDate: _selectedDay ?? DateTime.now(),
+          selectedDate: reserva?.dateTime ?? _selectedDay,
+          existingReserva: reserva,
         ),
       ),
     );
 
     if (result == true) {
-      _fetchAndProcessReservations(); // Recargar si se creó una reserva
+      _fetchAndProcessReservations();
     }
   }
 
-  Future<void> _deleteReservationAndRefresh(String reservationId) async {
-    bool? confirmDelete = await showDialog<bool>(
+  Future<void> _deleteReservationAndRefresh(int reservationId) async {
+    final confirmDelete = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Confirmar Eliminación'),
-          content: Text('¿Estás seguro de que quieres eliminar esta reservación?'),
+          title: const Text('Confirmar Eliminación'),
+          content: const Text('¿Estás seguro de que quieres eliminar esta reserva? Esta acción no se puede deshacer.'),
           actions: <Widget>[
             TextButton(
-              child: Text('Cancelar'),
+              child: const Text('Cancelar'),
               onPressed: () => Navigator.of(context).pop(false),
             ),
             TextButton(
-              child: Text('Eliminar', style: TextStyle(color: Colors.red)),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Eliminar'),
               onPressed: () => Navigator.of(context).pop(true),
             ),
           ],
@@ -145,36 +153,40 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
 
     if (confirmDelete == true) {
       try {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Eliminando reservación...')));
-        await _apiService.deleteReservation(reservationId);
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Reservación eliminada exitosamente.')));
-        _fetchAndProcessReservations(); // Recargar la lista
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Eliminando...')));
+        await _apiService.deleteReservation(reservationId.toString());
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Reserva eliminada con éxito.')));
+        _fetchAndProcessReservations();
       } catch (e) {
-        print("Error al eliminar reservación en pantalla: $e");
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al eliminar reservación: ${e.toString()}')),
+          SnackBar(content: Text('Error al eliminar: ${e.toString()}')),
         );
       }
     }
   }
 
+  // ✅ NUEVO: Función para encontrar cliente por ID
+  Cliente? _findClienteById(int clienteId) {
+    try {
+      return _clientes.firstWhere((c) => c.id == clienteId);
+    } catch (e) {
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Calendario de Reservas'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Recargar Reservas',
+            tooltip: 'Recargar',
             onPressed: _fetchAndProcessReservations,
           ),
           IconButton(
-            icon: const Icon(Icons.today_outlined),
+            icon: const Icon(Icons.today),
             tooltip: 'Ir a Hoy',
             onPressed: () {
               setState(() {
@@ -189,7 +201,7 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
       body: Column(
         children: [
           TableCalendar<Reserva>(
-            locale: Localizations.localeOf(context).toString(),
+            locale: 'es_ES',
             firstDay: DateTime.utc(2020, 1, 1),
             lastDay: DateTime.utc(2030, 12, 31),
             focusedDay: _focusedDay,
@@ -201,102 +213,78 @@ class _ReservasCalendarScreenState extends State<ReservasCalendarScreen> {
             onPageChanged: _onPageChanged,
             onFormatChanged: _onFormatChanged,
             calendarStyle: CalendarStyle(
-              outsideDaysVisible: false,
               todayDecoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.3),
+                color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
                 shape: BoxShape.circle,
               ),
-              todayTextStyle: TextStyle(color: theme.colorScheme.onPrimary.withOpacity(0.9)),
               selectedDecoration: BoxDecoration(
-                color: theme.colorScheme.primary,
+                color: Theme.of(context).colorScheme.primary,
                 shape: BoxShape.circle,
               ),
-              selectedTextStyle: TextStyle(color: theme.colorScheme.onPrimary),
               markerDecoration: BoxDecoration(
-                color: theme.colorScheme.secondary,
+                color: Theme.of(context).colorScheme.secondary,
                 shape: BoxShape.circle,
               ),
-              weekendTextStyle: TextStyle(color: Colors.redAccent[100]),
             ),
-            headerStyle: HeaderStyle(
+            headerStyle: const HeaderStyle(
               titleCentered: true,
-              formatButtonVisible: true,
               formatButtonShowsNext: false,
-              formatButtonDecoration: BoxDecoration(
-                border: Border.all(color: theme.colorScheme.primary),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              formatButtonTextStyle: TextStyle(color: theme.colorScheme.primary),
-              titleTextStyle: textTheme.titleMedium!,
-            ),
-            daysOfWeekStyle: DaysOfWeekStyle(
-              weekendStyle: TextStyle(color: Colors.redAccent[100]),
             ),
           ),
           const Divider(height: 1),
-          if (_isLoadingEvents)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_loadingError != null)
-             Expanded(child: Center(child: Padding(
-               padding: const EdgeInsets.all(16.0),
-               child: Text(_loadingError!, style: TextStyle(color: Colors.red, fontSize: 16)),
-             )))
-          else ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    _selectedDay != null
-                        ? 'Reservas para ${DateFormat.yMMMd(Localizations.localeOf(context).toString()).format(_selectedDay!)}'
-                        : 'Seleccione un día',
-                    style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  if (_selectedDayReservas.isNotEmpty)
-                    Text('${_selectedDayReservas.length} evento(s)', style: textTheme.bodySmall)
-                ],
-              ),
-            ),
-            Expanded(
-              child: _selectedDayReservas.isEmpty
-                  ? Center(
-                      child: Text(
-                        'No hay reservas para este día.',
-                        style: textTheme.bodyLarge?.copyWith(color: Colors.grey),
-                      ))
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(bottom: 80), // Para el FAB
-                      itemCount: _selectedDayReservas.length,
-                      itemBuilder: (context, index) {
-                        final reserva = _selectedDayReservas[index];
-                        return ReservationCard(
-                          reserva: reserva,
-                          onTap: () {
-                            // TODO: Implementar navegación a pantalla de detalle/edición
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Ver/Editar: ${reserva.eventName}')),
-                            );
-                          },
-                          // Opcional: onDelete para la tarjeta
-                          // onDelete: () {
-                          //   if (reserva.id != null) {
-                          //     _deleteReservationAndRefresh(reserva.id!);
-                          //   }
-                          // },
-                        );
-                      },
-                    ),
-            ),
-          ]
+          Expanded(
+            child: _buildEventList(),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _navigateToCreateAndRefresh,
+        onPressed: () => _navigateToFormAndRefresh(),
         label: const Text('Crear Reserva'),
         icon: const Icon(Icons.add),
         tooltip: 'Crear Nueva Reserva',
       ),
+    );
+  }
+
+  Widget _buildEventList() {
+    if (_isLoadingEvents) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_loadingError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Text(_loadingError!, style: const TextStyle(color: Colors.red)),
+        )
+      );
+    }
+    if (_selectedDayReservas.isEmpty) {
+      return const Center(
+        child: Text(
+          'No hay reservas para este día.',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 80.0),
+      itemCount: _selectedDayReservas.length,
+      itemBuilder: (context, index) {
+        final reserva = _selectedDayReservas[index];
+        // ✅ CORRECCIÓN: Pasar cliente encontrado a la tarjeta
+        final cliente = _findClienteById(reserva.idCustomers);
+        
+        return ReservationCard(
+          reserva: reserva,
+          cliente: cliente, // ✅ NUEVO: Pasar cliente
+          onTap: () => _navigateToFormAndRefresh(reserva: reserva),
+          onDelete: () {
+             if (reserva.idReservations != null) {
+                _deleteReservationAndRefresh(reserva.idReservations!);
+             }
+          },
+        );
+      },
     );
   }
 }

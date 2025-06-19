@@ -74,7 +74,7 @@ class _LandingScreenState extends State<LandingScreen> {
       final endOfWeek = startOfWeek.add(const Duration(days: 6));
 
       final reservationsThisWeek = allReservations.where((reserva) {
-        final reservaDate = reserva.reservationDate;
+      final reservaDate = reserva.dateTime;
         return reservaDate.isAfter(startOfWeek.subtract(const Duration(days: 1))) && 
                reservaDate.isBefore(endOfWeek.add(const Duration(days: 1)));
       }).toList();
